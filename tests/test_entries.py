@@ -312,12 +312,18 @@ def load_verifier():
     return module
 
 
-def verifier_problems(tree: Tree) -> list[str]:
-    problems: list[str] = []
+def verifier_results(tree: Tree) -> list[tuple[str, str, str]]:
+    """(label, "ok" | "skip" | "problem", message) for each fixture of each entry in the tree.
+
+    A fixture whose source kind the verifier defines and cannot recompute (`kind-unread`) is a
+    skip naming the kind: its digests (rules 3 and 4) still hold it.
+    """
+    results: list[tuple[str, str, str]] = []
     for directory in tree.entry_dirs():
         path = directory.relative_to(tree.base).as_posix()
         entry = load_strict((directory / "entry.json").read_bytes())
         for fixture in entry["fixtures"]:
+            label = f"{path}/{fixture['name']}"
             fixture_dir = directory / fixture["path"]
             command = [
                 sys.executable, "-I", str(VERIFIER),
@@ -332,13 +338,22 @@ def verifier_problems(tree: Tree) -> list[str]:
             try:
                 answer = json.loads(result.stdout)
             except ValueError:
-                problems.append(f"{path}/{fixture['name']}: the verifier printed no answer")
+                results.append((label, "problem", "the verifier printed no answer"))
                 continue
-            if "reading" not in answer:
-                problems.append(f"{path}/{fixture['name']}: the verifier answered {json.dumps(answer, sort_keys=True)}")
+            if answer.get("refused") == "kind-unread":
+                kinds = ", ".join(entry["sourceKinds"])
+                results.append((label, "skip", f"the verifier cannot recompute a source of kind {kinds} (kind-unread); held by its digests only"))
+            elif "reading" not in answer:
+                results.append((label, "problem", f"the verifier answered {json.dumps(answer, sort_keys=True)}"))
             elif answer["reading"].get("digest") != fixture["preparationDigest"]:
-                problems.append(f"{path}/{fixture['name']}: the verifier's digest is not the preparationDigest")
-    return problems
+                results.append((label, "problem", "the verifier's digest is not the preparationDigest"))
+            else:
+                results.append((label, "ok", ""))
+    return results
+
+
+def verifier_problems(tree: Tree) -> list[str]:
+    return [f"{label}: {message}" for label, status, message in verifier_results(tree) if status == "problem"]
 
 
 # ---------------------------------------------------------------------------------------------
@@ -422,7 +437,12 @@ class RepositoryTree(unittest.TestCase):
 
     @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
     def test_fixtures_against_the_preparation_verifier(self):
-        self.assertEqual(verifier_problems(Tree(ROOT)), [])
+        results = verifier_results(Tree(ROOT))
+        self.assertEqual([r for r in results if r[1] == "problem"], [])
+        for label, status, message in results:
+            with self.subTest(label):
+                if status == "skip":
+                    self.skipTest(message)
 
 
 class ExampleEntry(unittest.TestCase):
@@ -441,6 +461,7 @@ class ExampleEntry(unittest.TestCase):
     @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
     def test_example_fixture_against_the_preparation_verifier(self):
         self.assertEqual(verifier_problems(self.tree), [])
+        self.assertEqual([status for _, status, _ in verifier_results(self.tree)], ["ok"])
 
     @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
     def test_canon_agrees_with_the_verifiers(self):
@@ -473,6 +494,33 @@ class ExampleEntry(unittest.TestCase):
         self.assertTrue(manifest_problems([row, row]))
         self.assertTrue(manifest_problems([{**row, "extra": 1}]))
         self.assertTrue(manifest_problems({}))
+
+
+class UnreadKindExample(unittest.TestCase):
+    """A fixture of a kind the verifier does not read is a skip naming the kind, held by digests."""
+
+    tree = Tree(EXAMPLE.parent / "unread-kind-entry")
+
+    def test_digests_hold_it(self):
+        self.assertEqual(tree_problems(self.tree), [])
+
+    @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
+    def test_the_skip_reason_names_the_kind(self):
+        results = verifier_results(self.tree)
+        self.assertEqual(len(results), 1)
+        label, status, message = results[0]
+        self.assertEqual(status, "skip")
+        self.assertIn("selected-file", message)
+        self.assertIn("kind-unread", message)
+        self.assertEqual(verifier_problems(self.tree), [])
+
+    @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
+    def test_the_repository_report_skips_with_the_reason(self):
+        for label, status, message in verifier_results(self.tree):
+            with self.subTest(label):
+                if status == "skip":
+                    self.skipTest(message)
+                self.assertEqual(status, "ok")
 
 
 class Scans(unittest.TestCase):

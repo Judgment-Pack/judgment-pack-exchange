@@ -50,3 +50,4 @@ them.
   `profiles.json` and `preparation.json`: the files the specification's preparation verifier reads,
   with `dialect.json` from the entry.
 - A fixture's `path` is relative to the entry directory.
+- A fixture whose source kind the specification's verifier defines and cannot recompute (`kind-unread`) is skipped by the verifier test with a reason naming the kind; such a fixture is held by its digests only.
