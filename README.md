@@ -45,7 +45,9 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md). In short:
 - a material entry gets the review the specification's
   [governance](https://github.com/Judgment-Pack/judgment-pack-spec/blob/main/GOVERNANCE.md) sets
   for material changes;
-- no credentials, tokens or personal data in any file; a test refuses the common shapes;
+- no credentials, tokens or personal data in any file: CI refuses recognised credential shapes and
+  local paths, a maintainer must refuse credentials and personal data in every file before merge,
+  and the scan's silence proves nothing;
 - commits are signed off under the Developer Certificate of Origin.
 
 To run the tests, check out the specification at the commit `ci.yml` pins into `.spec/` and run

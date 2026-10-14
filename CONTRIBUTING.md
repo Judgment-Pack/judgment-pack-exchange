@@ -16,8 +16,9 @@ system. Critical feedback and counterexamples are as valuable as new entries.
 - **Say only what the format lets you say.** The entry's `assertion` is the format's sentence,
   unchanged; the README states what the dialect is for and nothing about the truth of any record.
 - **No credentials, tokens or personal data** in any file. Record fixtures from synthetic or
-  consenting sources and remove the rest. The tests refuse the common shapes before a merge, but
-  the check is yours first.
+  consenting sources and remove the rest. CI refuses recognised credential shapes and local paths;
+  a maintainer must refuse credentials and personal data in every file before merge; the scan's
+  silence proves nothing, so the check is yours first.
 
 The format is in [`docs/entry-format.md`](docs/entry-format.md); a worked example, which is not an
 entry, is in [`tests/fixtures/example-entry/`](tests/fixtures/example-entry/).

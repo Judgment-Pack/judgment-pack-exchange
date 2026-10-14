@@ -15,8 +15,8 @@ required: at least one for every entry.
 
 ## Personal data and credentials
 
-- [ ] No credentials, tokens or personal data are in any file (the tests refuse the common shapes;
-      this is the author's check too).
+- [ ] No credentials, tokens or personal data are in any file (CI refuses recognised shapes and local
+      paths only, and its silence proves nothing; a maintainer refuses the rest before merge).
 - [ ] Records in the fixtures are recorded or synthetic, and say which.
 
 ## Checklist

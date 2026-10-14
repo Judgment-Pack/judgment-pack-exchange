@@ -11,7 +11,7 @@ names:
 
 - `entry.json` — a closed JSON object: `entryVersion` (`1`); `id` (`<publisher>.<name>`, lower-case
   letters, digits, `-` and `.`); `title`; `direction` (`"input"`, `"output"` or `"both"`); `pack` (an
-  object: `id`, the pack's id, and either `versions`, a version range, or `digests`, an array of the
+  object: `id`, the pack's id, an absolute URI as Core §4 makes it, and either `versions`, a version range, or `digests`, an array of the
   pack digests the dialect was written against); `dialect` (an object: `path`, always
   `dialect.json`; `dialectVersion`; `digest`, the SHA-256 of the dialect document's canonical bytes
   as RFC 0018 defines them); `requires` (an object, members optional: `inputProfile` by digest,
@@ -36,7 +36,8 @@ pinning each entry by the SHA-256 of its `entry.json` and `dialect.json` bytes, 
 test holds every entry to the manifest and every fixture to its `preparationDigest` by running the
 specification's preparation verifier over it. What a published entry establishes is the author's
 assertion above, under the Exchange's review; nothing about truth. Credentials, tokens and personal
-data are refused by a test before anything is merged.
+data are refused before anything is merged: by CI where the shape is recognised, and by a maintainer
+in every file (see the end of this page).
 
 ## How this repository's tests read the format
 
@@ -50,3 +51,38 @@ them.
   `profiles.json` and `preparation.json`: the files the specification's preparation verifier reads,
   with `dialect.json` from the entry.
 - A fixture's `path` is relative to the entry directory.
+- A fixture whose source kind the specification's verifier defines and cannot recompute (`kind-unread`) is skipped by the verifier test with a reason naming the kind; such a fixture is held by its digests only.
+- A fixture whose dialect names a `dialectVersion` the verifier does not implement (version 3 today, with the `research` kind) is skipped by the verifier test with a reason naming the version; version-3 fixtures are held by digests until the verifier implements version 3. Any other refusal, `input-malformed` included, is a failure.
+
+## Types and bounds
+
+The Exchange RFC's review fixed these, and the tests enforce exactly them. Every object is closed,
+and a member name given twice is refused.
+
+- `entryVersion`: the integer `1`.
+- `id`: `^[a-z0-9]+(\.[a-z0-9-]+)+$`, 3 to 128 characters, equal to the entry's path with `/` read as `.`.
+- `title`: a string of 1 to 200 characters.
+- `direction`: one of `input`, `output`, `both`.
+- `pack`: a closed object. `id` is an absolute URI of at most 2048 characters; exactly one of
+  `versions` (a string of 1 to 64 characters) or `digests` (1 to 16 `sha256:` digests).
+- `dialect`: a closed object. `path` is the literal `dialect.json`; `dialectVersion` is an integer of
+  at least 2 and equal to the document's own `version`; `digest` is a `sha256:` digest.
+- `requires`: a closed object whose optional members are `inputProfile` and `connectionProfile`
+  (`sha256:` digests) and `platform` (`^[a-z][a-z0-9-]*$`, at most 64 characters).
+- `sourceKinds`: an array of 1 to 16 distinct strings, each from RFC 0018's list for the document's
+  version (version 2: `operation`, `selected-file`; version 3 adds `http`, `sql`, `web`, `research`).
+- `licence`: an SPDX identifier or a `LicenseRef-` form, at most 64 characters.
+- `author`: a string of 1 to 100 characters.
+- `assertion`: the fixed sentence, byte for byte.
+- `fixtures`: an array of 1 to 64 closed objects `{name, path, preparationDigest}`; `name` is
+  `^[a-z0-9]+(-[a-z0-9]+)*$`, at most 64 characters, and distinct; `path` is exactly
+  `fixtures/<name>`; `preparationDigest` is a `sha256:` digest.
+- `verification`: an array of at most 32 closed objects `{date, runner, runtime, readers, result}`;
+  `date` is `YYYY-MM-DD`; `runner` and `runtime` are `^v\d+\.\d+\.\d+$`; `readers` is 1 to 8
+  strings of at most 200 characters; `result` is the string `agree`.
+- Files: `entry.json` and `README.md` are at most 64 KiB each; a fixture directory is at most 16 MiB.
+
+## What the tests do about credentials and personal data
+
+CI refuses recognised credential shapes and local paths. A maintainer must refuse credentials and
+personal data in every file before merge. The scan's silence proves nothing.
