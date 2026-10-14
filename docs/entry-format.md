@@ -59,6 +59,7 @@ them.
   `profiles.json` and `preparation.json`: the files the specification's preparation verifier reads,
   with `dialect.json` from the entry.
 - A fixture's `path` is relative to the entry directory.
+- Every value of an output document's `policies` is held to the decision-policy form of RFC 0018 §10 and the gateway's `docs/design/engine-config.md` (`decisionPolicy`, at v0.15.0): a closed object, `outcomes` required, `packs`, `reviewed`, `bind`, `fix`, `closed` and `requireSignedRecord` optional and of the gateway's types, every `argument` and `fact` an RFC 6901 pointer.
 - An entry's `direction` follows from the documents it holds: `input` holds `dialect.json`, `output`
   holds `output.json`, and `both` holds both, each with its own digest in `entry.json` and in
   `manifest.json`; a document the direction does not give is refused, as is one it gives and the

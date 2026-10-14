@@ -370,6 +370,61 @@ def tree_problems(tree: Tree) -> list[str]:
     return problems
 
 
+POINTER = re.compile(r"(/([^/~]|~[01])*)*")
+KEY = re.compile(r"[0-9a-f]{64}")
+
+
+def policy_problems(name, policy) -> list[str]:
+    """One decision policy in the gateway's form (engine-config.md at v0.15.0, `decisionPolicy`)."""
+    where = f"output.json: policies.{name}"
+    problems = closed(policy, {"outcomes"}, {"packs", "reviewed", "bind", "fix", "closed", "requireSignedRecord"}, where)
+    if problems:
+        return problems
+
+    def non_empty_distinct(member, item_ok):
+        value = policy[member]
+        if not (isinstance(value, list) and value and all(item_ok(v) for v in value)):
+            problems.append(f"{where}: {member} is not a non-empty array of the form the gateway gives")
+        elif len({json.dumps(v, sort_keys=True) for v in value}) != len(value):
+            problems.append(f"{where}: {member} names an entry twice")
+
+    def pointer_ok(v):
+        return isinstance(v, str) and POINTER.fullmatch(v) is not None
+
+    non_empty_distinct("outcomes", lambda v: isinstance(v, str) and v != "")
+    if "packs" in policy:
+        non_empty_distinct("packs", digest_ok)
+    if "requireSignedRecord" in policy:
+        non_empty_distinct("requireSignedRecord", lambda v: isinstance(v, str) and KEY.fullmatch(v) is not None)
+    for member in ("reviewed", "closed"):
+        if member in policy and not isinstance(policy[member], bool):
+            problems.append(f"{where}: {member} is not a boolean")
+    bound, fixed = [], []
+    for member, other, sink in (("bind", "fact", bound), ("fix", "value", fixed)):
+        if member not in policy:
+            continue
+        entries = policy[member]
+        if not isinstance(entries, list):
+            problems.append(f"{where}: {member} is not an array")
+            continue
+        for i, entry in enumerate(entries):
+            bad = closed(entry, {"argument", other}, set(), f"{where}: {member}[{i}]")
+            problems += bad
+            if bad:
+                continue
+            if not pointer_ok(entry["argument"]):
+                problems.append(f"{where}: {member}[{i}].argument is not an RFC 6901 pointer")
+            elif member == "bind" and not pointer_ok(entry["fact"]):
+                problems.append(f"{where}: bind[{i}].fact is not an RFC 6901 pointer")
+            else:
+                sink.append(entry["argument"])
+    if len(set(bound)) != len(bound) or len(set(fixed)) != len(fixed):
+        problems.append(f"{where}: an argument pointer is named twice")
+    if set(bound) & set(fixed):
+        problems.append(f"{where}: an argument pointer is both fixed and bound")
+    return problems
+
+
 def directory_problems(directory: Path, path: str, row: dict) -> list[str]:
     parts = path.split("/")
     expected_id = f"{parts[1]}.{parts[2]}"
@@ -422,6 +477,8 @@ def directory_problems(directory: Path, path: str, row: dict) -> list[str]:
             problems.append(f"{path}: output.json is not a closed object of outputVersion, platform and policies")
         elif not (isinstance(document["platform"], str) and document["platform"] and isinstance(document["policies"], dict)):
             problems.append(f"{path}: output.json: platform is not a non-empty string or policies is not an object")
+        elif any(policy_problems(n, v) for n, v in document["policies"].items()):
+            problems += [f"{path}: {p}" for n, v in document["policies"].items() for p in policy_problems(n, v)]
         elif document["outputVersion"] != "1":
             problems.append(f"{path}: output.json: outputVersion is not the string \"1\"")
         else:
@@ -962,6 +1019,16 @@ class TwoDocumentExamples(unittest.TestCase):
                 "member added": {**document, "extra": 1},
                 "platform empty": {**document, "platform": ""},
                 "policies an array": {**document, "policies": []},
+                "policy a string": {**document, "policies": {"wit_work_item_write": "not-a-decision-policy"}},
+                "policy without outcomes": {**document, "policies": {"t": {"closed": True}}},
+                "policy member unknown": {**document, "policies": {"t": {"outcomes": ["a"], "x": 1}}},
+                "outcomes empty": {**document, "policies": {"t": {"outcomes": []}}},
+                "closed a string": {**document, "policies": {"t": {"outcomes": ["a"], "closed": "yes"}}},
+                "requireSignedRecord malformed": {**document, "policies": {"t": {"outcomes": ["a"], "requireSignedRecord": ["abc"]}}},
+                "bind not a pointer": {**document, "policies": {"t": {"outcomes": ["a"], "bind": [{"argument": "id", "fact": "/x"}]}}},
+                "bind not closed": {**document, "policies": {"t": {"outcomes": ["a"], "bind": [{"argument": "/id", "fact": "/x", "z": 1}]}}},
+                "fix without value": {**document, "policies": {"t": {"outcomes": ["a"], "fix": [{"argument": "/id"}]}}},
+                "fixed and bound": {**document, "policies": {"t": {"outcomes": ["a"], "fix": [{"argument": "/id", "value": 1}], "bind": [{"argument": "/id", "fact": "/x"}]}}},
             }.items():
                 with self.subTest(label):
                     data = json.dumps(changed, indent=2).encode() + b"\n"
