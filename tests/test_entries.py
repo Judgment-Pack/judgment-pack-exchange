@@ -312,6 +312,10 @@ def load_verifier():
     return module
 
 
+# The verifier gives a version it does not read no name of its own: input-malformed, with this detail.
+VERSION_UNREAD = "a dialect version this reader does not read"
+
+
 def verifier_results(tree: Tree) -> list[tuple[str, str, str]]:
     """(label, "ok" | "skip" | "problem", message) for each fixture of each entry in the tree.
 
@@ -343,6 +347,9 @@ def verifier_results(tree: Tree) -> list[tuple[str, str, str]]:
             if answer.get("refused") == "kind-unread":
                 kinds = ", ".join(entry["sourceKinds"])
                 results.append((label, "skip", f"the verifier cannot recompute a source of kind {kinds} (kind-unread); held by its digests only"))
+            elif answer.get("refused") == "input-malformed" and VERSION_UNREAD in answer.get("detail", ""):
+                version = entry["dialect"]["dialectVersion"]
+                results.append((label, "skip", f"the verifier does not implement dialect version {version}; held by its digests only"))
             elif "reading" not in answer:
                 results.append((label, "problem", f"the verifier answered {json.dumps(answer, sort_keys=True)}"))
             elif answer["reading"].get("digest") != fixture["preparationDigest"]:
@@ -521,6 +528,34 @@ class UnreadKindExample(unittest.TestCase):
                 if status == "skip":
                     self.skipTest(message)
                 self.assertEqual(status, "ok")
+
+
+class UnreadVersionExample(unittest.TestCase):
+    """A version-3 fixture is held by its digests until the verifier implements version 3."""
+
+    tree = Tree(EXAMPLE.parent / "unread-version-entry")
+
+    def test_digests_hold_it(self):
+        self.assertEqual(tree_problems(self.tree), [])
+
+    @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
+    def test_the_skip_reason_names_the_version(self):
+        results = verifier_results(self.tree)
+        self.assertEqual(len(results), 1)
+        _, status, message = results[0]
+        self.assertEqual(status, "skip")
+        self.assertIn("dialect version 3", message)
+
+    @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
+    def test_another_malformed_refusal_stays_a_failure(self):
+        import tempfile, shutil
+
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            shutil.copytree(self.tree.base, base, dirs_exist_ok=True)
+            path = base / "entries/example/research/dialect.json"
+            path.write_text(path.read_text().replace('"version":3', '"version":"3"'))
+            self.assertEqual([s for _, s, _ in verifier_results(Tree(base))], ["problem"])
 
 
 class Scans(unittest.TestCase):

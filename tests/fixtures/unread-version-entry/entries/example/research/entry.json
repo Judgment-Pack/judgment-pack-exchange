@@ -1,0 +1,30 @@
+{
+  "entryVersion": 1,
+  "id": "example.research",
+  "title": "Example: a version-3 dialect with a research source",
+  "direction": "input",
+  "pack": {
+    "id": "example.vendor-intake",
+    "versions": ">=0.1.0"
+  },
+  "dialect": {
+    "path": "dialect.json",
+    "dialectVersion": 3,
+    "digest": "sha256:d305112a3618413d071a18efb98a778cf254e91ba54616d9aec66d5ef1237826"
+  },
+  "requires": {},
+  "sourceKinds": [
+    "research"
+  ],
+  "licence": "Apache-2.0",
+  "author": "example",
+  "assertion": "The author asserts that these rules derive these facts and this evidence-availability from records of that shape, or these arguments from that disposition, and asserts nothing about any record's truth.",
+  "fixtures": [
+    {
+      "name": "valid",
+      "path": "fixtures/valid",
+      "preparationDigest": "sha256:4af2bc1797af2114d110c4f4a04780bc56d856ade969df9a62c1ee604aecfb47"
+    }
+  ],
+  "verification": []
+}

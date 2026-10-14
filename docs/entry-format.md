@@ -51,3 +51,4 @@ them.
   with `dialect.json` from the entry.
 - A fixture's `path` is relative to the entry directory.
 - A fixture whose source kind the specification's verifier defines and cannot recompute (`kind-unread`) is skipped by the verifier test with a reason naming the kind; such a fixture is held by its digests only.
+- A fixture whose dialect names a `dialectVersion` the verifier does not implement (version 3 today, with the `research` kind) is skipped by the verifier test with a reason naming the version; version-3 fixtures are held by digests until the verifier implements version 3. Any other refusal, `input-malformed` included, is a failure.
