@@ -19,9 +19,9 @@ issue is already public. Do not put the credential or the personal data itself i
 ## Credentials and personal data
 
 Entries, fixtures and READMEs must hold no credentials, tokens, keys or personal data. Fixtures are
-recorded or synthetic records with such content removed. A test scans every file for common
-credential shapes and for local paths, and refuses the tree if it finds one. If something slips
-past, report it as above; the entry is removed and the history is treated as exposed.
+recorded or synthetic records with such content removed. CI refuses recognised
+credential shapes and local paths. A maintainer must refuse credentials and personal data in every
+file before merge; the scan's silence proves nothing. If something slips past, report it as above; the entry is removed and the history is treated as exposed.
 
 ## Security boundary
 
