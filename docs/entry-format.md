@@ -14,7 +14,10 @@ names:
   object: `id`, the pack's id, an absolute URI as Core §4 makes it, and either `versions`, a version range, or `digests`, an array of the
   pack digests the dialect was written against); `dialect` (an object: `path`, always
   `dialect.json`; `dialectVersion`; `digest`, the SHA-256 of the dialect document's canonical bytes
-  as RFC 0018 defines them); `requires` (an object, members optional: `inputProfile` by digest,
+  as RFC 0018 defines them; required for direction `input` and `both`, absent for `output`);
+  `output` (an object: `path`, always `output.json`; `outputVersion`; `digest`, the SHA-256 of the
+  output document's canonical bytes as RFC 0018 §10 defines them; required for direction `output`
+  and `both`, absent for `input`); `requires` (an object, members optional: `inputProfile` by digest,
   `connectionProfile` by digest, `platform` by catalog binding name for an output dialect);
   `sourceKinds` (the kinds the dialect's sources use, from RFC 0018's list); `licence` (an SPDX
   identifier); `author` (a handle or organisation name as the author chooses to be named; never
@@ -24,15 +27,20 @@ names:
   `fixtures` (an array of `{name, path, preparationDigest}`); `verification` (an array, empty until
   verified, of `{date, runner, runtime, readers, result}` where `readers` names the preparation
   verifiers that agreed and `result` is `"agree"`).
-- `dialect.json` — the dialect document in RFC 0018's format.
+- `dialect.json` — the dialect document in RFC 0018's format; present exactly when `entry.json`
+  has a `dialect` member.
+- `output.json` — the output dialect in RFC 0018 §10's form; present exactly when `entry.json` has
+  an `output` member.
 - `fixtures/<name>/` — for each fixture, the recorded source records (as the Runner retains them)
   and `preparation.json`, the exact canonical bytes the dialect must produce from them; for a
   `research` source, the research record held by digest.
 - `README.md` — what the dialect is for, in the publisher's words; no credentials, no personal
   data.
 
-The repository root holds `manifest.json`, an array of `{id, path, entryDigest, dialectDigest}`
-pinning each entry by the SHA-256 of its `entry.json` and `dialect.json` bytes, in `id` order; a
+The repository root holds `manifest.json`, an array of `{id, path, entryDigest, dialectDigest,
+outputDigest}` pinning each entry by the SHA-256 of its `entry.json`, `dialect.json` and
+`output.json` bytes, in `id` order; `dialectDigest` is present exactly when the entry has a dialect
+document and `outputDigest` exactly when it has an output document; a
 test holds every entry to the manifest and every fixture to its `preparationDigest` by running the
 specification's preparation verifier over it. What a published entry establishes is the author's
 assertion above, under the Exchange's review; nothing about truth. Credentials, tokens and personal
@@ -51,6 +59,15 @@ them.
   `profiles.json` and `preparation.json`: the files the specification's preparation verifier reads,
   with `dialect.json` from the entry.
 - A fixture's `path` is relative to the entry directory.
+- Every value of an output document's `policies` is held to the decision-policy form of RFC 0018 §10 and the gateway's `docs/design/engine-config.md` (`decisionPolicy`, at v0.15.0): a closed object, `outcomes` required, `packs`, `reviewed`, `bind`, `fix`, `closed` and `requireSignedRecord` optional and of the gateway's types, every `argument` and `fact` an RFC 6901 pointer.
+- An entry's `direction` follows from the documents it holds: `input` holds `dialect.json`, `output`
+  holds `output.json`, and `both` holds both, each with its own digest in `entry.json` and in
+  `manifest.json`; a document the direction does not give is refused, as is one it gives and the
+  entry lacks. `output.digest` is the digest of the output document's `canon` bytes (RFC 0018 §1,
+  §10); `outputDigest` is of the file's bytes, as it lies. `output.outputVersion` is an integer
+  equal to the integer the document's own `outputVersion` spells, which RFC 0018 §10 writes as the
+  string `"1"`.
+- Output fixtures are held by their digests only until the gateway publishes policy vectors (RFC 0019, unresolved question 5): an output document has no preparation for a verifier to recompute, so an entry of direction `output` holds `sourceKinds` and `fixtures` as empty arrays, and an output document is pinned by `output.digest` and the manifest's `outputDigest` alone.
 - A fixture whose source kind the specification's verifier defines and cannot recompute (`kind-unread`) is skipped by the verifier test with a reason naming the kind; such a fixture is held by its digests only.
 - A fixture whose dialect names a `dialectVersion` the verifier does not implement (version 3 today, with the `research` kind) is skipped by the verifier test with a reason naming the version; version-3 fixtures are held by digests until the verifier implements version 3. Any other refusal, `input-malformed` included, is a failure.
 
@@ -65,17 +82,21 @@ and a member name given twice is refused.
 - `direction`: one of `input`, `output`, `both`.
 - `pack`: a closed object. `id` is an absolute URI of at most 2048 characters; exactly one of
   `versions` (a string of 1 to 64 characters) or `digests` (1 to 16 `sha256:` digests).
-- `dialect`: a closed object. `path` is the literal `dialect.json`; `dialectVersion` is an integer of
-  at least 2 and equal to the document's own `version`; `digest` is a `sha256:` digest.
+- `dialect`: a closed object, required for `input` and `both` and absent for `output`. `path` is the
+  literal `dialect.json`; `dialectVersion` is an integer of at least 2 and equal to the document's
+  own `version`; `digest` is a `sha256:` digest.
+- `output`: a closed object, required for `output` and `both` and absent for `input`. `path` is the
+  literal `output.json`; `outputVersion` is an integer of at least 1, equal to the integer the
+  document's own `outputVersion` spells; `digest` is a `sha256:` digest.
 - `requires`: a closed object whose optional members are `inputProfile` and `connectionProfile`
   (`sha256:` digests) and `platform` (`^[a-z][a-z0-9-]*$`, at most 64 characters).
-- `sourceKinds`: an array of 1 to 16 distinct strings, each from RFC 0018's list for the document's
+- `sourceKinds`: an array of 1 to 16 distinct strings (empty for `output`), each from RFC 0018's list for the document's
   version (version 2: `operation`, `selected-file`; version 3 adds `http`, `sql`, `web`, `research`).
 - `licence`: an SPDX identifier or a `LicenseRef-` form, at most 64 characters.
 - `author`: a string of 1 to 100 characters.
 - `assertion`: the fixed sentence, byte for byte.
-- `fixtures`: an array of 1 to 64 closed objects `{name, path, preparationDigest}`; `name` is
-  `^[a-z0-9]+(-[a-z0-9]+)*$`, at most 64 characters, and distinct; `path` is exactly
+- `fixtures`: an array of 1 to 64 closed objects `{name, path, preparationDigest}`, empty
+  for `output`; `name` is `^[a-z0-9]+(-[a-z0-9]+)*$`, at most 64 characters, and distinct; `path` is exactly
   `fixtures/<name>`; `preparationDigest` is a `sha256:` digest.
 - `verification`: an array of at most 32 closed objects `{date, runner, runtime, readers, result}`;
   `date` is `YYYY-MM-DD`; `runner` and `runtime` are `^v\d+\.\d+\.\d+$`; `readers` is 1 to 8

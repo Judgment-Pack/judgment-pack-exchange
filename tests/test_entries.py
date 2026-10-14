@@ -124,7 +124,7 @@ def manifest_problems(manifest) -> list[str]:
     problems = []
     for i, row in enumerate(manifest):
         where = f"manifest[{i}]"
-        bad = closed(row, {"id", "path", "entryDigest", "dialectDigest"}, set(), where)
+        bad = closed(row, {"id", "path", "entryDigest"}, {"dialectDigest", "outputDigest"}, where)
         problems += bad
         if bad:
             continue
@@ -132,8 +132,8 @@ def manifest_problems(manifest) -> list[str]:
             problems.append(f"{where}: id is not of the entry id form")
         if not is_str(row["path"]):
             problems.append(f"{where}: path is not a string")
-        for name in ("entryDigest", "dialectDigest"):
-            if not (isinstance(row[name], str) and DIGEST.fullmatch(row[name])):
+        for name in ("entryDigest", "dialectDigest", "outputDigest"):
+            if name in row and not (isinstance(row[name], str) and DIGEST.fullmatch(row[name])):
                 problems.append(f"{where}: {name} is not a sha256 digest")
     ids = [r["id"] for r in manifest if isinstance(r, dict) and isinstance(r.get("id"), str)]
     if ids != sorted(ids):
@@ -165,13 +165,13 @@ def date_ok(v) -> bool:
     return True
 
 
-def entry_problems(entry, directory_id: str, document_version=None) -> list[str]:
+def entry_problems(entry, directory_id: str, document_version=None, output_document_version=None) -> list[str]:
     """The entry format's types and bounds (docs/entry-format.md). Every object is closed."""
     required = {
-        "entryVersion", "id", "title", "direction", "pack", "dialect", "requires", "sourceKinds",
+        "entryVersion", "id", "title", "direction", "pack", "requires", "sourceKinds",
         "licence", "author", "assertion", "fixtures", "verification",
     }
-    problems = closed(entry, required, set(), "entry")
+    problems = closed(entry, required, {"dialect", "output"}, "entry")
     if problems:
         return problems
     if not is_int(entry["entryVersion"]) or entry["entryVersion"] != 1:
@@ -209,8 +209,20 @@ def entry_problems(entry, directory_id: str, document_version=None) -> list[str]
     else:
         problems.append("pack: not an object")
 
-    dialect = entry["dialect"]
-    if isinstance(dialect, dict):
+    direction = entry["direction"]
+    has_dialect = direction in ("input", "both")
+    has_output = direction in ("output", "both")
+    if direction in ("input", "output", "both"):
+        if has_dialect != ("dialect" in entry):
+            problems.append(f"entry: dialect is {'required' if has_dialect else 'absent'} for direction {direction}")
+        if has_output != ("output" in entry):
+            problems.append(f"entry: output is {'required' if has_output else 'absent'} for direction {direction}")
+
+    version = None
+    dialect = entry.get("dialect")
+    if "dialect" not in entry:
+        pass
+    elif isinstance(dialect, dict):
         problems += closed(dialect, {"path", "dialectVersion", "digest"}, set(), "dialect")
         if dialect.get("path") != "dialect.json":
             problems.append("dialect: path is not dialect.json")
@@ -222,8 +234,24 @@ def entry_problems(entry, directory_id: str, document_version=None) -> list[str]
         if not digest_ok(dialect.get("digest")):
             problems.append("dialect: digest is not a sha256 digest")
     else:
-        version = None
         problems.append("dialect: not an object")
+
+    output = entry.get("output")
+    if "output" not in entry:
+        pass
+    elif isinstance(output, dict):
+        problems += closed(output, {"path", "outputVersion", "digest"}, set(), "output")
+        if output.get("path") != "output.json":
+            problems.append("output: path is not output.json")
+        output_version = output.get("outputVersion")
+        if not is_int(output_version) or output_version < 1:
+            problems.append("output: outputVersion is not an integer of at least 1")
+        elif output_document_version is not None and output_version != output_document_version:
+            problems.append("output: outputVersion is not the integer the document's own outputVersion spells")
+        if not digest_ok(output.get("digest")):
+            problems.append("output: digest is not a sha256 digest")
+    else:
+        problems.append("output: not an object")
 
     requires = entry["requires"]
     if isinstance(requires, dict):
@@ -239,7 +267,10 @@ def entry_problems(entry, directory_id: str, document_version=None) -> list[str]
         problems.append("requires: not an object")
 
     kinds = entry["sourceKinds"]
-    if not (isinstance(kinds, list) and 1 <= len(kinds) <= 16 and all(isinstance(k, str) for k in kinds)):
+    if direction == "output":
+        if kinds != []:
+            problems.append("entry: sourceKinds is not an empty array for direction output")
+    elif not (isinstance(kinds, list) and 1 <= len(kinds) <= 16 and all(isinstance(k, str) for k in kinds)):
         problems.append("entry: sourceKinds is not an array of 1 to 16 strings")
     else:
         if len(set(kinds)) != len(kinds):
@@ -252,7 +283,10 @@ def entry_problems(entry, directory_id: str, document_version=None) -> list[str]
 
     fixtures = entry["fixtures"]
     if isinstance(fixtures, list):
-        if not 1 <= len(fixtures) <= 64:
+        if direction == "output":
+            if fixtures:
+                problems.append("entry: fixtures is not an empty array for direction output")
+        elif not 1 <= len(fixtures) <= 64:
             problems.append("entry: fixtures is not an array of 1 to 64 (at least one is required)")
         names = []
         for i, fixture in enumerate(fixtures):
@@ -336,40 +370,128 @@ def tree_problems(tree: Tree) -> list[str]:
     return problems
 
 
+POINTER = re.compile(r"(/([^/~]|~[01])*)*")
+KEY = re.compile(r"[0-9a-f]{64}")
+
+
+def policy_problems(name, policy) -> list[str]:
+    """One decision policy in the gateway's form (engine-config.md at v0.15.0, `decisionPolicy`)."""
+    where = f"output.json: policies.{name}"
+    problems = closed(policy, {"outcomes"}, {"packs", "reviewed", "bind", "fix", "closed", "requireSignedRecord"}, where)
+    if problems:
+        return problems
+
+    def non_empty_distinct(member, item_ok):
+        value = policy[member]
+        if not (isinstance(value, list) and value and all(item_ok(v) for v in value)):
+            problems.append(f"{where}: {member} is not a non-empty array of the form the gateway gives")
+        elif len({json.dumps(v, sort_keys=True) for v in value}) != len(value):
+            problems.append(f"{where}: {member} names an entry twice")
+
+    def pointer_ok(v):
+        return isinstance(v, str) and POINTER.fullmatch(v) is not None
+
+    non_empty_distinct("outcomes", lambda v: isinstance(v, str) and v != "")
+    if "packs" in policy:
+        non_empty_distinct("packs", digest_ok)
+    if "requireSignedRecord" in policy:
+        non_empty_distinct("requireSignedRecord", lambda v: isinstance(v, str) and KEY.fullmatch(v) is not None)
+    for member in ("reviewed", "closed"):
+        if member in policy and not isinstance(policy[member], bool):
+            problems.append(f"{where}: {member} is not a boolean")
+    bound, fixed = [], []
+    for member, other, sink in (("bind", "fact", bound), ("fix", "value", fixed)):
+        if member not in policy:
+            continue
+        entries = policy[member]
+        if not isinstance(entries, list):
+            problems.append(f"{where}: {member} is not an array")
+            continue
+        for i, entry in enumerate(entries):
+            bad = closed(entry, {"argument", other}, set(), f"{where}: {member}[{i}]")
+            problems += bad
+            if bad:
+                continue
+            if not pointer_ok(entry["argument"]):
+                problems.append(f"{where}: {member}[{i}].argument is not an RFC 6901 pointer")
+            elif member == "bind" and not pointer_ok(entry["fact"]):
+                problems.append(f"{where}: bind[{i}].fact is not an RFC 6901 pointer")
+            else:
+                sink.append(entry["argument"])
+    if len(set(bound)) != len(bound) or len(set(fixed)) != len(fixed):
+        problems.append(f"{where}: an argument pointer is named twice")
+    if set(bound) & set(fixed):
+        problems.append(f"{where}: an argument pointer is both fixed and bound")
+    return problems
+
+
 def directory_problems(directory: Path, path: str, row: dict) -> list[str]:
     parts = path.split("/")
     expected_id = f"{parts[1]}.{parts[2]}"
     problems: list[str] = []
     if row.get("id") != expected_id:
         problems.append(f"{path}: manifest id {row.get('id')} is not {expected_id}")
-    for name in ("entry.json", "dialect.json", "README.md"):
+    for name in ("entry.json", "README.md"):
         if not (directory / name).is_file():
             problems.append(f"{path}: no {name}")
     if problems:
         return problems
     entry_bytes = (directory / "entry.json").read_bytes()
-    dialect_bytes = (directory / "dialect.json").read_bytes()
     if digest(entry_bytes) != row.get("entryDigest"):
         problems.append(f"{path}: entry.json does not match the manifest's entryDigest")
-    if digest(dialect_bytes) != row.get("dialectDigest"):
-        problems.append(f"{path}: dialect.json does not match the manifest's dialectDigest")
     try:
         entry = load_strict(entry_bytes)
     except ValueError as error:
         return problems + [f"{path}: entry.json: {error}"]
-    try:
-        dialect_document = load_strict(dialect_bytes)
-        canonical = digest(canon(dialect_document))
-    except ValueError as error:
-        return problems + [f"{path}: dialect.json: {error}"]
-    document_version = dialect_document.get("version") if isinstance(dialect_document, dict) else None
-    shape = entry_problems(entry, expected_id, document_version)
+    direction = entry.get("direction") if isinstance(entry, dict) else None
+    # Which documents the entry holds follows from its direction; entry_problems refuses any other.
+    documents = {
+        "dialect": ("dialect.json", "dialectDigest", direction in ("input", "both")),
+        "output": ("output.json", "outputDigest", direction in ("output", "both")),
+    }
+    canonical = {}
+    for key, (name, column, wanted) in documents.items():
+        present = (directory / name).is_file()
+        if wanted and not present:
+            problems.append(f"{path}: no {name}")
+        if present and not wanted:
+            problems.append(f"{path}: {name} is present in an entry of direction {direction}")
+        if (column in row) != wanted:
+            problems.append(f"{path}: the manifest {'lacks' if wanted else 'has'} {column} for direction {direction}")
+        if not (wanted and present):
+            continue
+        data = (directory / name).read_bytes()
+        if digest(data) != row.get(column):
+            problems.append(f"{path}: {name} does not match the manifest's {column}")
+        try:
+            canonical[key] = (load_strict(data), digest(canon(load_strict(data))))
+        except ValueError as error:
+            problems.append(f"{path}: {name}: {error}")
+    document_version = None
+    if "dialect" in canonical and isinstance(canonical["dialect"][0], dict):
+        document_version = canonical["dialect"][0].get("version")
+    output_version = None
+    if "output" in canonical:
+        document = canonical["output"][0]
+        if not isinstance(document, dict) or set(document) != {"outputVersion", "platform", "policies"}:
+            problems.append(f"{path}: output.json is not a closed object of outputVersion, platform and policies")
+        elif not (isinstance(document["platform"], str) and document["platform"] and isinstance(document["policies"], dict)):
+            problems.append(f"{path}: output.json: platform is not a non-empty string or policies is not an object")
+        elif any(policy_problems(n, v) for n, v in document["policies"].items()):
+            problems += [f"{path}: {p}" for n, v in document["policies"].items() for p in policy_problems(n, v)]
+        elif document["outputVersion"] != "1":
+            problems.append(f"{path}: output.json: outputVersion is not the string \"1\"")
+        else:
+            output_version = 1
+    shape = entry_problems(entry, expected_id, document_version, output_version)
     problems += [f"{path}: {p}" for p in shape]
     if shape:
         return problems
     problems += [f"{path}: {p}" for p in size_problems(directory, entry)]
-    if canonical != entry["dialect"]["digest"]:
+    if "dialect" in canonical and canonical["dialect"][1] != entry["dialect"]["digest"]:
         problems.append(f"{path}: dialect.digest is not the digest of dialect.json's canonical bytes")
+    if "output" in canonical and canonical["output"][1] != entry["output"]["digest"]:
+        problems.append(f"{path}: output.digest is not the digest of output.json's canonical bytes")
     for fixture in entry["fixtures"]:
         prep = directory / fixture["path"] / "preparation.json"
         if not prep.is_file():
@@ -740,6 +862,190 @@ class UnreadVersionExample(unittest.TestCase):
             path = base / "entries/example/research/dialect.json"
             path.write_text(path.read_text().replace('"version":3', '"version":"3"'))
             self.assertEqual([s for _, s, _ in verifier_results(Tree(base))], ["problem"])
+
+
+class TwoDocumentExamples(unittest.TestCase):
+    """An entry of direction both holds dialect.json and output.json; one of direction output holds output.json alone."""
+
+    both = Tree(EXAMPLE.parent / "both-entry")
+    output = Tree(EXAMPLE.parent / "output-entry")
+
+    def entry_and_row(self, tree):
+        directory = tree.entry_dirs()[0]
+        path = directory.relative_to(tree.base).as_posix()
+        return directory, path, load_strict((directory / "entry.json").read_bytes()), tree.manifest()[0]
+
+    def copy(self, tree, tmp):
+        import shutil
+
+        base = Path(tmp)
+        shutil.copytree(tree.base, base, dirs_exist_ok=True)
+        return Tree(base)
+
+    def test_each_direction_holds_to_the_format(self):
+        self.assertEqual(tree_problems(self.both), [])
+        self.assertEqual(tree_problems(self.output), [])
+
+    def test_the_manifest_rows_carry_the_digests_the_documents_have(self):
+        _, _, _, row = self.entry_and_row(self.both)
+        self.assertEqual(sorted(row), ["dialectDigest", "entryDigest", "id", "outputDigest", "path"])
+        _, _, _, row = self.entry_and_row(self.output)
+        self.assertEqual(sorted(row), ["entryDigest", "id", "outputDigest", "path"])
+        self.assertEqual(manifest_problems([row]), [])
+        self.assertTrue(manifest_problems([{**row, "outputDigest": "x"}]))
+        self.assertTrue(manifest_problems([{**row, "extra": 1}]))
+
+    @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
+    def test_the_input_side_of_a_both_entry_is_read_and_an_output_entry_has_nothing_to_read(self):
+        self.assertEqual([s for _, s, _ in verifier_results(self.both)], ["ok"])
+        self.assertEqual(verifier_results(self.output), [])
+
+    def test_the_output_member_shape_and_bounds(self):
+        _, _, entry, _ = self.entry_and_row(self.both)
+        ident = "example.triage-both"
+        self.assertEqual(entry_problems(entry, ident, 2, 1), [])
+        out = entry["output"]
+
+        def with_(**changes):
+            return {**entry, **changes}
+
+        refused = {
+            "output path": with_(output={**out, "path": "other.json"}),
+            "output not closed": with_(output={**out, "extra": 1}),
+            "output member missing": with_(output={k: v for k, v in out.items() if k != "digest"}),
+            "outputVersion 0": with_(output={**out, "outputVersion": 0}),
+            "outputVersion string": with_(output={**out, "outputVersion": "1"}),
+            "outputVersion true": with_(output={**out, "outputVersion": True}),
+            "output digest": with_(output={**out, "digest": "sha256:A"}),
+            "output not an object": with_(output="output.json"),
+        }
+        for label, candidate in refused.items():
+            with self.subTest(label):
+                self.assertTrue(entry_problems(candidate, ident, 2, 1), label)
+        self.assertEqual(entry_problems(with_(output={**out, "outputVersion": 2}), ident, 2, 2), [])
+        self.assertTrue(entry_problems(entry, ident, 2, 2))
+
+    def test_direction_decides_which_documents_the_entry_holds(self):
+        _, _, both, _ = self.entry_and_row(self.both)
+        _, _, only, _ = self.entry_and_row(self.output)
+        without = lambda e, name: {k: v for k, v in e.items() if k != name}
+        refused = {
+            "both without output": (without(both, "output"), "example.triage-both"),
+            "both without dialect": (without(both, "dialect"), "example.triage-both"),
+            "input with output": ({**both, "direction": "input"}, "example.triage-both"),
+            "output with dialect": ({**only, "dialect": both["dialect"]}, "example.triage-write"),
+            "output without output": (without(only, "output"), "example.triage-write"),
+            "output with a source kind": ({**only, "sourceKinds": ["operation"]}, "example.triage-write"),
+            "output with a fixture": ({**only, "fixtures": both["fixtures"]}, "example.triage-write"),
+            "input without dialect": ({**without(both, "dialect"), "direction": "input", "output": None}, "example.triage-both"),
+        }
+        for label, (candidate, ident) in refused.items():
+            with self.subTest(label):
+                self.assertTrue(entry_problems(candidate, ident, 2, 1), label)
+        input_only = without({**both, "direction": "input"}, "output")
+        self.assertEqual(entry_problems(input_only, "example.triage-both", 2, None), [])
+
+    def test_a_both_entry_without_output_json_is_refused(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = self.copy(self.both, tmp)
+            directory, path, _, row = self.entry_and_row(tree)
+            (directory / "output.json").unlink()
+            self.assertTrue(directory_problems(directory, path, row))
+
+    def test_an_input_entry_with_an_output_json_is_refused(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = self.copy(EXAMPLE_TREE, tmp)
+            directory, path, _, row = self.entry_and_row(tree)
+            self.assertEqual(directory_problems(directory, path, row), [])
+            (directory / "output.json").write_bytes((self.both.entry_dirs()[0] / "output.json").read_bytes())
+            self.assertTrue(directory_problems(directory, path, row))
+            with_digest = {**row, "outputDigest": digest((directory / "output.json").read_bytes())}
+            self.assertTrue(directory_problems(directory, path, with_digest))
+
+    def test_an_output_entry_with_a_dialect_is_refused(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = self.copy(self.output, tmp)
+            directory, path, entry, row = self.entry_and_row(tree)
+            (directory / "dialect.json").write_bytes((self.both.entry_dirs()[0] / "dialect.json").read_bytes())
+            self.assertTrue(directory_problems(directory, path, row))
+            dialect = load_strict((directory / "dialect.json").read_bytes())
+            entry = {**entry, "dialect": {"path": "dialect.json", "dialectVersion": 2, "digest": digest(canon(dialect))}}
+            (directory / "entry.json").write_bytes(json.dumps(entry, indent=2).encode() + b"\n")
+            row = {**row, "entryDigest": digest((directory / "entry.json").read_bytes()),
+                   "dialectDigest": digest((directory / "dialect.json").read_bytes())}
+            self.assertTrue(directory_problems(directory, path, row))
+
+    def test_a_digest_mismatch_on_output_json_is_refused(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            for source in (self.both, self.output):
+                tree = self.copy(source, tmp + "/" + source.base.name)
+                directory, path, entry, row = self.entry_and_row(tree)
+                self.assertEqual(directory_problems(directory, path, row), [])
+                document = load_strict((directory / "output.json").read_bytes())
+                document["policies"]["wit_work_item_write"]["closed"] = False
+                changed = json.dumps(document, indent=2).encode() + b"\n"
+                (directory / "output.json").write_bytes(changed)
+                # the file no longer matches the manifest's outputDigest, nor the entry's output.digest
+                problems = directory_problems(directory, path, row)
+                self.assertTrue(any("outputDigest" in p for p in problems), problems)
+                self.assertTrue(any("output.digest" in p for p in problems), problems)
+                # the manifest follows the bytes: only the entry's canonical digest still refuses
+                problems = directory_problems(directory, path, {**row, "outputDigest": digest(changed)})
+                self.assertEqual([p for p in problems if "output.digest" in p].__len__(), 1, problems)
+                # a stored form other than canon has its own file digest and the same canonical one
+                (directory / "output.json").write_bytes(canon(load_strict((self.output.entry_dirs()[0] / "output.json").read_bytes())))
+                problems = directory_problems(directory, path, row)
+                self.assertTrue(any("outputDigest" in p for p in problems), problems)
+                self.assertFalse(any("output.digest" in p for p in problems), problems)
+
+    def test_the_output_document_is_held_to_its_form(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = self.copy(self.output, tmp)
+            directory, path, entry, row = self.entry_and_row(tree)
+            document = load_strict((directory / "output.json").read_bytes())
+            for label, changed in {
+                "version 2": {**document, "outputVersion": "2"},
+                "version an integer": {**document, "outputVersion": 1},
+                "member added": {**document, "extra": 1},
+                "platform empty": {**document, "platform": ""},
+                "policies an array": {**document, "policies": []},
+                "policy a string": {**document, "policies": {"wit_work_item_write": "not-a-decision-policy"}},
+                "policy without outcomes": {**document, "policies": {"t": {"closed": True}}},
+                "policy member unknown": {**document, "policies": {"t": {"outcomes": ["a"], "x": 1}}},
+                "outcomes empty": {**document, "policies": {"t": {"outcomes": []}}},
+                "closed a string": {**document, "policies": {"t": {"outcomes": ["a"], "closed": "yes"}}},
+                "requireSignedRecord malformed": {**document, "policies": {"t": {"outcomes": ["a"], "requireSignedRecord": ["abc"]}}},
+                "bind not a pointer": {**document, "policies": {"t": {"outcomes": ["a"], "bind": [{"argument": "id", "fact": "/x"}]}}},
+                "bind not closed": {**document, "policies": {"t": {"outcomes": ["a"], "bind": [{"argument": "/id", "fact": "/x", "z": 1}]}}},
+                "fix without value": {**document, "policies": {"t": {"outcomes": ["a"], "fix": [{"argument": "/id"}]}}},
+                "fixed and bound": {**document, "policies": {"t": {"outcomes": ["a"], "fix": [{"argument": "/id", "value": 1}], "bind": [{"argument": "/id", "fact": "/x"}]}}},
+            }.items():
+                with self.subTest(label):
+                    data = json.dumps(changed, indent=2).encode() + b"\n"
+                    (directory / "output.json").write_bytes(data)
+                    entry = {**entry, "output": {**entry["output"], "digest": digest(canon(changed))}}
+                    (directory / "entry.json").write_bytes(json.dumps(entry, indent=2).encode() + b"\n")
+                    candidate = {**row, "outputDigest": digest(data), "entryDigest": digest((directory / "entry.json").read_bytes())}
+                    self.assertTrue(directory_problems(directory, path, candidate), label)
+
+    def test_an_output_entry_with_a_dialect_digest_in_its_row_is_refused(self):
+        directory, path, _, row = self.entry_and_row(self.output)
+        self.assertTrue(directory_problems(directory, path, {**row, "dialectDigest": digest(b"x")}))
+        directory, path, _, row = self.entry_and_row(self.both)
+        self.assertTrue(directory_problems(directory, path, {k: v for k, v in row.items() if k != "outputDigest"}))
+
+
+EXAMPLE_TREE = ExampleEntry.tree
 
 
 class Scans(unittest.TestCase):

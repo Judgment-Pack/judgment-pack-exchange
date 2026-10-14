@@ -1,0 +1,8 @@
+[
+  {
+    "id": "example.triage-write",
+    "path": "entries/example/triage-write",
+    "entryDigest": "sha256:4535fe5f5ae27550d420a9931792a46eb4b6065a203c43eafe94218b3018fb20",
+    "outputDigest": "sha256:1a2f702352a28d6dcd5cf4eeb61fd8a11ed106ddc1c1a2ca3bc2811b3f766e81"
+  }
+]
