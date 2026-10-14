@@ -1,0 +1,44 @@
+{
+  "outputVersion": "1",
+  "platform": "azure-devops",
+  "policies": {
+    "wit_work_item_write": {
+      "outcomes": [
+        "approve"
+      ],
+      "fix": [
+        {
+          "argument": "/action",
+          "value": "update"
+        },
+        {
+          "argument": "/updates/0/op",
+          "value": "test"
+        },
+        {
+          "argument": "/updates/0/path",
+          "value": "/rev"
+        },
+        {
+          "argument": "/updates/1",
+          "value": {
+            "op": "replace",
+            "path": "/fields/System.State",
+            "value": "Approved"
+          }
+        }
+      ],
+      "bind": [
+        {
+          "argument": "/id",
+          "fact": "/workItem/id"
+        },
+        {
+          "argument": "/updates/0/value",
+          "fact": "/workItem/rev"
+        }
+      ],
+      "closed": true
+    }
+  }
+}

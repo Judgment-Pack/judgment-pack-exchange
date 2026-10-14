@@ -22,14 +22,18 @@ whether a decision made with the dialect is sound.
 An entry is a directory `entries/<publisher>/<name>/`:
 
 - `entry.json`: a closed object naming the entry (`id`, `title`, `direction`), the pack it was
-  written against, the dialect's digest, what it requires, its source kinds, licence, author, the
+  written against, the digest of each document it holds, what it requires, its source kinds, licence, author, the
   assertion above, its fixtures and its verifications;
-- `dialect.json`: the dialect document;
+- `dialect.json`: the dialect document (the input side), for direction `input` and `both`;
+- `output.json`: the output dialect (RFC 0018 §10, the output side), for direction `output` and
+  `both`; an entry of direction `both` holds the two documents, each with its own digest. Output
+  fixtures are held by their digests only until the gateway publishes policy vectors;
 - `fixtures/<name>/`: recorded source records and `preparation.json`, the canonical bytes the
   dialect must produce from them;
 - `README.md`: what the dialect is for.
 
-`manifest.json` at the root pins every entry by the SHA-256 of its `entry.json` and `dialect.json`.
+`manifest.json` at the root pins every entry by the SHA-256 of its `entry.json` and of each document it holds,
+`dialect.json` and `output.json`.
 The format is written out in [`docs/entry-format.md`](docs/entry-format.md). The dialect's own
 format is [RFC 0018](https://github.com/Judgment-Pack/judgment-pack-spec/blob/main/rfcs/0018-dialect.md);
 the Exchange's design is recorded in

@@ -8,12 +8,15 @@ needs to check it. Its files:
 
 - `entry.json`, the closed record of what the entry is, who wrote it, its licence, and the sentence
   its author asserts;
-- `dialect.json`, the dialect document in RFC 0018's format;
+- `dialect.json`, the dialect document in RFC 0018's format, for an entry of direction `input` or
+  `both`;
+- `output.json`, the output dialect in RFC 0018 §10's form, for an entry of direction `output` or
+  `both`; output fixtures are held by their digests only until the gateway publishes policy vectors;
 - `fixtures/<name>/`, the recorded source records of each fixture and `preparation.json`, the exact
   canonical bytes the dialect must produce from them;
 - `README.md`, what the dialect is for, in the publisher's words.
 
 [`manifest.json`](../manifest.json) at the root pins each entry by the digests of its `entry.json`
-and `dialect.json`. The whole format is in [`docs/entry-format.md`](../docs/entry-format.md), and
+and of each document it holds. The whole format is in [`docs/entry-format.md`](../docs/entry-format.md), and
 the way to add an entry is in [`CONTRIBUTING.md`](../CONTRIBUTING.md). A worked example, which is
 not an entry, is under [`tests/fixtures/example-entry/`](../tests/fixtures/example-entry/).
