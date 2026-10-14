@@ -1,0 +1,3 @@
+# The Exchange's tests use the Python standard library alone, and the specification's preparation
+# verifier (checked out at .spec/), which does too. Nothing to install; the file is kept so CI and
+# a contributor run the same command as in the other repositories.

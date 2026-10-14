@@ -1,0 +1,29 @@
+.DS_Store
+.idea/
+
+# The specification's checkout the tests read (CI checks it out at a pinned commit); never committed.
+/.spec/
+
+# Local AI-assistant configuration and state.
+/.agent/
+/.agents/
+/.ai/
+/.aider/
+/.amazonq/
+/.claude/
+/.codeium/
+/.codex/
+/.continue/
+/.copilot/
+/.cursor/
+/.gemini/
+/.roo/
+/.tabnine/
+/.windsurf/
+
+.vscode/
+node_modules/
+*.log
+__pycache__/
+*.py[cod]
+.venv/
