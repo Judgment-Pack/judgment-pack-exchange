@@ -4,7 +4,7 @@
   "title": "Example: a selected file, a kind the verifier does not read",
   "direction": "input",
   "pack": {
-    "id": "example.vendor-intake",
+    "id": "https://example.com/packs/vendor-intake",
     "versions": ">=0.1.0"
   },
   "dialect": {

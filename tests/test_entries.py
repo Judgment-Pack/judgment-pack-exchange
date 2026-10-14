@@ -28,6 +28,7 @@ ASSERTION = (
 )
 DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 ID = re.compile(r"[a-z0-9.-]+")
+ABSOLUTE_URI = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:[^\s]+")
 SEGMENT = re.compile(r"[a-z0-9-]+")
 SKIPPED_DIRS = {".git", ".spec", ".venv", "node_modules", "__pycache__"}
 
@@ -157,8 +158,8 @@ def entry_problems(entry, directory_id: str) -> list[str]:
     pack = entry["pack"]
     if isinstance(pack, dict):
         problems += closed(pack, {"id"}, {"versions", "digests"}, "pack")
-        if not is_str(pack.get("id")):
-            problems.append("pack: id is not a non-empty string")
+        if not (is_str(pack.get("id")) and ABSOLUTE_URI.fullmatch(pack["id"])):
+            problems.append("pack: id is not an absolute URI (Core §4)")
         if ("versions" in pack) == ("digests" in pack):
             problems.append("pack: exactly one of versions and digests")
         if "versions" in pack and not is_str(pack["versions"]):
@@ -487,6 +488,7 @@ class ExampleEntry(unittest.TestCase):
         self.assertTrue(entry_problems({**entry, "assertion": "x"}, "example.fx-convert"))
         self.assertTrue(entry_problems({**entry, "id": "example.other"}, "example.fx-convert"))
         self.assertTrue(entry_problems({**entry, "extra": 1}, "example.fx-convert"))
+        self.assertTrue(entry_problems({**entry, "pack": {"id": "vendor-intake", "versions": "1"}}, "example.fx-convert"))
         self.assertTrue(entry_problems({**entry, "fixtures": []}, "example.fx-convert"))
         self.assertTrue(entry_problems({**entry, "pack": {"id": "p", "versions": "1", "digests": []}}, "example.fx-convert"))
         self.assertTrue(entry_problems({**entry, "verification": [{"date": "d"}]}, "example.fx-convert"))
