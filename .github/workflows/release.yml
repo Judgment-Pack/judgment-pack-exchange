@@ -239,7 +239,14 @@ jobs:
             --verify-tag
           # The one draft under the tag, which this job has just made (no
           # release existed under it before).
-          release_id="$(gh api "repos/${GH_REPO}/releases" --paginate --jq '.[] | select(.tag_name == env.RELEASE_TAG and .draft) | .id')"
+          # The listing can lag the creation by a few seconds: read it again
+          # until the draft appears, at most twelve times.
+          release_id=""
+          for attempt in $(seq 1 12); do
+            release_id="$(gh api "repos/${GH_REPO}/releases" --paginate --jq '.[] | select(.tag_name == env.RELEASE_TAG and .draft) | .id')"
+            [[ "${release_id}" =~ ^[0-9]+$ ]] && break
+            sleep 5
+          done
           [[ "${release_id}" =~ ^[0-9]+$ ]] || { echo "Expected one draft release under ${RELEASE_TAG}; found: ${release_id:-none}" >&2; exit 1; }
           echo "release-id=${release_id}" >> "${GITHUB_OUTPUT}"
 
