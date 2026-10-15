@@ -3,9 +3,11 @@
 This page states what a release of a catalog in the entry format is, and what a consumer — a desk,
 or anything else that imports an entry — fetches, verifies and refuses before it offers an entry for
 import. [RFC 0019](https://github.com/Judgment-Pack/judgment-pack-spec/blob/main/rfcs/0019-exchange.md)
-§7, "A catalog's release contract", as revised on 2026-10-15 (judgment-pack-spec#163), is the
-authority: this page restates it in this repository's words, and where the two differ, the RFC is
-right and this page is a bug. The contract is that of any catalog in the [entry format](entry-format.md),
+§7, "A catalog's release contract", as revised on 2026-10-15 by judgment-pack-spec#163 and
+judgment-pack-spec#178 (merged as `489f670`), is the authority: this page restates it in this
+repository's words, and where the two differ, the RFC is right and this page is a bug. The revision
+of #178 leaves the manifest's bounds and this contract unchanged but for the row's `kind`, the
+document form checks and the consumer's preset duties. The contract is that of any catalog in the [entry format](entry-format.md),
 this repository included, so a desk can consume this catalog or another one in the same format.
 
 ## A catalog and a release
@@ -15,8 +17,9 @@ this repository included, so a desk can consume this catalog or another one in t
 - A **release** is a tag resolved to the commit it names, an annotated tag peeled to its commit. A
   tag that does not resolve to a commit is refused. The tag has the
   [release-tag grammar](entry-format.md#release-tags-and-compatibility-ranges), `vMAJOR.MINOR.PATCH`.
-- No branch ancestry is checked. This repository tags only commits on `main`
-  ([releasing](releasing.md)), and a consumer does not rely on it.
+- No branch ancestry is checked by the consumer. A producer may require the tagged commit to be on
+  `main` as its own rule; this repository does, in [`release.yml`](../.github/workflows/release.yml)
+  ([releasing](releasing.md)), and a consumer does not rely on that producer rule.
 - The consumer reads `manifest.json` and every entry file as the blob in that commit's tree, byte for
   byte, with no conversion, including no checkout line-ending conversion. Every file it fetches
   therefore belongs to that same commit.
@@ -30,15 +33,36 @@ this repository included, so a desk can consume this catalog or another one in t
 The manifest pins each entry by digests over the bytes as stored, and the entry pins its documents
 and fixtures in turn ([the entry format](entry-format.md)):
 
+- each row's `kind`, `dialect` or `preset`, which equals its entry's;
 - the manifest's `entryDigest`, over `entry.json`; `dialectDigest`, over `dialect.json`, for an entry
   with an input dialect; and `outputDigest`, over `output.json`, for an entry with an output dialect;
-- the manifest's `fixtures`, each fixture's complete file set, by basename, in `entry.json`'s order;
+- the manifest's `fixtures`, each fixture's complete file set, by basename, in `entry.json`'s order
+  (`[]` for an output-only entry and for a preset);
 - in `entry.json`, `dialect.digest` and `output.digest`, over the documents' canonical bytes
   (RFC 0018 §1, §2, §10), and each fixture's `preparationDigest`, over its `preparation.json` as
   stored.
 
 The manifest gives no separate digest for `README.md` or for each fixture input. Those files are
 fetched as blobs from the same commit, and the commit pins them.
+
+## Who holds these duties
+
+`tests/test_entries.py` holds this catalog's manifest, entries, fixtures and scans
+([the entry format](entry-format.md)). The duties below are the consumer's, and are to be held by
+the consumer's own tests. For the Desk, the repository is `Judgment-Pack/judgment-pack-desk`, tracked
+by judgment-pack-desk#400:
+
+- import replay with its own reader and the fixture's own inputs;
+- refusal of lower tags and of tags moved from their retained commits;
+- withdrawal: the imported commit stays and shows the withdrawal;
+- review records: reviewer, time, old and new commits, and explicit approval before replacement;
+- matching entry kinds in the manifest row and `entry.json`;
+- a preset's document-form check by its own form checker;
+- refusal to run an unpaired preset.
+
+These name the repository responsible for each duty, not a claim that an importer or its tests have
+shipped. Another consumer holds each duty in its own repository's tests. The catalog's CI cannot
+establish that a consumer fetched, replayed or reviewed anything.
 
 ## Before import: what a consumer verifies
 
@@ -50,15 +74,18 @@ commit's tree and one entry per row, distinct ids in byte order, closed rows and
 release, using the manifest's fixture file lists, and verifies:
 
 - `entry.json` against the manifest's `entryDigest`, and its members against
-  [the members' table](entry-format.md#the-members), its `id`, direction and authoring metadata
-  included, with the row's path matching its `id`;
+  [the members' table](entry-format.md#the-members), its `id`, `kind`, direction and authoring
+  metadata included, with the row's `kind` matching its `kind` and the row's path matching its `id`;
+  each input dialect, of either entry kind, is held to its document's form by the consumer's own form
+  checker, written to RFC 0018's text ([the catalog's form checker](entry-format.md#the-catalogs-form-checker));
 - `dialect.json` against the manifest's `dialectDigest` over the stored bytes, and against
   `dialect.digest` over the document's canonical bytes (RFC 0018 §1, §2), when the entry has an input
   dialect;
 - `output.json` against `outputDigest` over the stored bytes, and against `output.digest` over the
   document's canonical bytes (RFC 0018 §10), when the entry has an output dialect;
 - each fixture's `preparation.json` against its `preparationDigest`, and the fixture's closed file
-  set against the manifest's list and the format, with every listed file fetched successfully;
+  set against the manifest's list and the format, with every listed file fetched successfully and the
+  source classification and binding document checked even when the preparation reader skips it;
 - every pinned digest against the fetched bytes it names, the profiles and acquisitions the reader
   checks included, using canonical bytes only where that digest's definition requires them;
 - each file's bounds (the entry format, and RFC 0018 §12), and every file against the credential and
@@ -72,13 +99,16 @@ release, using the manifest's fixture file lists, and verifies:
   recomputable, with the reason, and never as a successful replay.
 
 File digests and canonical digests are distinct checks, even when they happen to be equal. For a
-fixture that is not recomputed, the checks establish only the pinned bytes, not the derivation.
+fixture that is not recomputed, the checks establish only the pinned bytes, not the derivation; the
+dialect's document form is checked independently. Verification runs no entry-supplied code and
+re-executes no research recipe.
 
 ## What a consumer refuses
 
 - **The catalog's import**, when the manifest is malformed.
 - **An entry**, before it is offered for import, on a failed digest, form, file-set, bound or scan
-  check, and on a replay disagreement, a finding or a verifier refusal.
+  check, its row's `kind` other than its own and its document's form among them, and on a replay
+  disagreement, a finding or a verifier refusal.
 - **A tag** that does not resolve to a commit, and a tag that now resolves to a commit other than the
   one retained for it.
 - **An update to a lower tag**, ordered by its three integer components.
@@ -86,13 +116,16 @@ fixture that is not recomputed, the checks establish only the pinned bytes, not 
 ## What a consumer must not do
 
 - Run code an entry supplies. Verification runs none, and re-executes no research recipe.
-- Treat an entry's requirements or suggested limits as allowances. They are data for review.
+- Treat an entry's requirements, display metadata or a README's suggestions as allowances. They are
+  data for review. The format carries no budget; a README may describe one, and a research source's
+  `constraints` is part of the request, not a budget.
+- Run an unpaired preset, or treat a preset's lack of fixtures as a successful replay.
 - Bind a connection, call a source, schedule a run or authorise a write because an entry was
   imported.
 - Replay a fixture under the installation's own bindings or profiles. Replay uses the fixture's own
   binding document and profiles.
-- Substitute profiles in a version-2 entry. Using one against the installation's sources is
-  re-authoring, an open question (RFC 0019, Unresolved question 7).
+- Substitute profiles in an entry with dialect version 2. Using one against the installation's
+  sources is re-authoring, an open question (RFC 0019, Unresolved question 7).
 - Let a newer tag, or an author's compatibility statement, replace the installation's review.
 - Remove or replace an imported entry silently.
 - Rely on the catalog's CI in place of its own checks.
@@ -104,8 +137,8 @@ as is a moved tag, and the consumer verifies the new release as above.
 
 An entry is **changed** if any file under its path is added, removed or differs in bytes between the
 two commits, its README, fixture inputs and binding documents included, even when no pinned digest
-changes. A change of direction is a change to the entry, and is shown for review with the changed
-files.
+changes. A change of entry kind or direction is a change to the entry, and is shown for review with
+the changed files.
 
 An entry absent from the new release is **withdrawn**: it stays imported at its previous commit and is
 shown as withdrawn. It is not silently removed or replaced.
@@ -128,10 +161,19 @@ previously imported commit and the new one. Only that explicit approval replaces
 
 Local binding means the binding document of RFC 0018 §4.4, for a version-3 dialect with unbound
 sources, mapping those sources to the installation's input profiles; a fixture's replay still uses
-the fixture's own binding document and profiles. A version-2 entry is imported as published and
-re-verified under its own dialect with its fixtures' own profiles; import does not substitute
-profiles in it. The installation chooses its local bindings and parameters separately, and may export
-its own dialect as an entry in any catalog.
+the fixture's own binding document and profiles. An entry with dialect version 2 is imported as
+published and, where it has fixtures, re-verified under its own dialect with their own profiles;
+import does not substitute profiles in it. Import does not bind a connection, call a source, schedule
+a run or authorise a write. The installation chooses its local bindings and parameters separately,
+and may export its own dialect as an entry in any catalog.
+
+## Presets
+
+A desk importing a preset pairs its dialect with a pack locally before any run; an unpaired preset is
+refused for running. It chooses parameters and, where required, binds sources under RFC 0018 §4.4.
+This local pairing is not a catalog-verified preparation and adds no verification record to the
+published preset. A preset's checks establish the recipe's identity and form only
+([presets](entry-format.md#presets)).
 
 ## This repository's releases
 

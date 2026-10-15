@@ -1,0 +1,10 @@
+[
+  {
+    "id": "example.company-research",
+    "kind": "preset",
+    "path": "entries/example/company-research",
+    "entryDigest": "sha256:00c54813dd68f283b0866858c52b2831147c3d97858b1f6ced81958280b58c82",
+    "dialectDigest": "sha256:d4e5a53f5eeb5d0be591e2a12bfd8900d09e03f20f204932a3b81dc0b6c4e81a",
+    "fixtures": []
+  }
+]

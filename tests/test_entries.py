@@ -1,8 +1,10 @@
 """Holds the Exchange's manifest, entries and fixtures to the entry format (docs/entry-format.md).
 
 Standard library only. The repository's own tree (entries/ and manifest.json) is held to every
-rule; the example under tests/fixtures/example-entry/ is a tree of the same shape, so the rules
-that need an entry are exercised while the Exchange holds none.
+rule; the examples under tests/fixtures/ are trees of the same shape, so the rules that need an
+entry are exercised while the Exchange holds none. Entry format version 2 (RFC 0019 §3, as revised
+by judgment-pack-spec#178): every entry has a `kind`, `dialect` or `preset`, and every dialect
+document is held to its form by the catalog's own form checker (tests/dialect_form.py).
 """
 
 from __future__ import annotations
@@ -18,6 +20,11 @@ import sys
 import unittest
 from pathlib import Path
 
+# The catalog's own form checker sits beside this file; discovery from tests/ finds it, and so does a run
+# that names the module from the repository root.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import dialect_form  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent
 EXAMPLE = ROOT / "tests" / "fixtures" / "example-entry"
 SPEC = ROOT / ".spec"
@@ -32,6 +39,11 @@ DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 ID = re.compile(r"[a-z0-9]+(\.[a-z0-9-]+)+")
 PLATFORM = re.compile(r"[a-z][a-z0-9-]*")
 FIXTURE_NAME = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
+# RFC 0019 §3: entry format version 2, whose entries have a kind.
+ENTRY_VERSION = 2
+ENTRY_KINDS = ("dialect", "preset")
+# A preset's directory holds exactly these files (RFC 0019 §3).
+PRESET_FILES = ("README.md", "dialect.json", "entry.json")
 # RFC 0019 §3: a release tag is vMAJOR.MINOR.PATCH in ASCII digits, with no leading zeroes and nothing
 # after. [0-9] is ASCII in Python's re, where \d is not.
 TAG = r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
@@ -54,13 +66,17 @@ FIXTURE_FILES_OPTIONAL = {"sources.json", "binding.json"}
 BINDING = "binding.json"
 # RFC 0018 §12: a binding document is at most 65,536 bytes.
 MAX_BINDING_BYTES = 65536
-# A reader's locator, `<repository>/<path>@<commit>` (RFC 0019 §3), read as `<owner>/<name>/<path>@<commit>`
-# until the RFC gives its grammar (judgment-pack-spec#166, item 5).
+# A reader's locator, `<owner>/<name>/<path>@<commit>` (RFC 0019 §3, the grammar #166 settled): owner
+# and name 1 to 100 of [A-Za-z0-9_.-]; one or more path segments of [A-Za-z0-9_.-]+, none `.` or `..`.
 OWNER_OR_NAME = re.compile(r"[A-Za-z0-9_.-]{1,100}")
+SEGMENT = re.compile(r"[A-Za-z0-9_.-]+")
 COMMIT = re.compile(r"[0-9a-f]{7,40}")
 READER = "Judgment-Pack/judgment-pack-spec/tools/dialect_verify.py@f821757fcaf5cb9831dbcb1f8b386a5ead793e4a"
 ABSOLUTE_URI = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:[^\s]+")
 SKIPPED_DIRS = {".git", ".spec", ".venv", "node_modules", "__pycache__"}
+# The earlier releases of the example catalog the trees under tests/fixtures/ stand for, one directory
+# per tag, each holding that release's manifest.json (the upgrade-key check, RFC 0019 §3).
+EXAMPLE_RELEASES = ROOT / "tests" / "fixtures" / "releases"
 
 
 def digest(data: bytes) -> str:
@@ -106,11 +122,24 @@ def read_manifest(path: Path):
 
 
 class Tree:
-    """A manifest and the entries under it: the repository's, or an example's."""
+    """A manifest and the entries under it: the repository's, or an example's.
 
-    def __init__(self, base: Path):
+    `releases` gives the catalog's earlier releases for the upgrade-key check, `[(tag, manifest bytes)]`
+    in tag order, or None when they cannot be read; it is called only for an entry with `upgrade`. The
+    repository's tree reads them from its git tags; an example's are the example catalog's, under
+    tests/fixtures/releases/.
+    """
+
+    def __init__(self, base: Path, releases=None):
         self.base = base
         self.manifest_path = base / "manifest.json"
+        self._releases = example_releases if releases is None else releases
+        self._read = None
+
+    def releases(self):
+        if self._read is None:
+            self._read = (self._releases(),)
+        return self._read[0]
 
     def manifest(self):
         return read_manifest(self.manifest_path)
@@ -164,10 +193,17 @@ def manifest_problems(manifest) -> list[str]:
     problems = []
     for i, row in enumerate(manifest):
         where = f"manifest[{i}]"
-        bad = closed(row, {"id", "path", "entryDigest", "fixtures"}, {"dialectDigest", "outputDigest"}, where)
+        bad = closed(row, {"id", "kind", "path", "entryDigest", "fixtures"}, {"dialectDigest", "outputDigest"}, where)
         problems += bad
         if bad:
             continue
+        if row["kind"] not in ENTRY_KINDS:
+            problems.append(f"{where}: kind is not dialect or preset")
+        elif row["kind"] == "preset":
+            if row["fixtures"] != []:
+                problems.append(f"{where}: a preset row's fixtures is not the empty array")
+            if "outputDigest" in row:
+                problems.append(f"{where}: a preset row has no outputDigest")
         if not id_ok(row["id"]):
             problems.append(f"{where}: id is not of the entry id form")
         elif row["path"] != entry_path(row["id"]):
@@ -268,9 +304,10 @@ def compatibility_ok(v) -> bool:
 
 
 def reader_problems(where: str, v) -> list[str]:
-    """A verification record's reader, `<owner>/<name>/<path>@<commit>` (the catalog's reading of RFC 0019
-    §3's `<repository>/<path>@<commit>`): owner and name 1 to 100 of [A-Za-z0-9_.-], a path with no empty
-    and no `..` segment, a commit of 7 to 40 lower-case hexadecimal digits; at most 200 characters."""
+    """A verification record's reader, `<owner>/<name>/<path>@<commit>` (RFC 0019 §3, reader locators): owner
+    and name 1 to 100 of [A-Za-z0-9_.-]; a path of one or more `/`-separated segments, each matching
+    [A-Za-z0-9_.-]+, none empty, `.` or `..`; a commit of 7 to 40 lower-case hexadecimal digits after the
+    last `@`; at most 200 characters in all."""
     bound = length_problem(where, v, 1, 200)
     if bound:
         return [bound]
@@ -285,21 +322,19 @@ def reader_problems(where: str, v) -> list[str]:
         problems.append(f"{where} {v!r} does not begin <owner>/<name>/, each 1 to 100 of [A-Za-z0-9_.-]")
     elif len(parts) < 3 or parts[2] == "":
         problems.append(f"{where} {v!r} has no path")
-    elif any(segment in ("", "..") for segment in parts[2].split("/")):
-        problems.append(f"{where} {v!r} has an empty or '..' path segment")
+    elif any(segment in ("", ".", "..") for segment in parts[2].split("/")):
+        problems.append(f"{where} {v!r} has an empty, '.' or '..' path segment")
+    elif not all(SEGMENT.fullmatch(segment) for segment in parts[2].split("/")):
+        problems.append(f"{where} {v!r} has a path segment of a character outside [A-Za-z0-9_.-]")
     return problems
 
 
 def unbound_source_names(document) -> set[str]:
-    """RFC 0018 §4.4: an `operation` source naming no `profile` and no `profileDigest` is unbound."""
-    sources = document.get("sources") if isinstance(document, dict) else None
-    if not isinstance(sources, list):
-        return set()
-    return {
-        s.get("name") for s in sources
-        if isinstance(s, dict) and s.get("kind") == "operation" and not ({"profile", "profileDigest"} & s.keys())
-        and isinstance(s.get("name"), str)
-    }
+    """RFC 0018 §4.4 as RFC 0019 §3 settles it: an `operation` with all of platform, operation, shape and record
+    and neither profile nor profileDigest, or a `research` source with none of profile, profileDigest and
+    webProfiles, is unbound. A source with some but not all of either set is not unbound: the form
+    checker refuses it, input-malformed."""
+    return set(dialect_form.unbound_sources(document))
 
 
 def has_unbound_source(document) -> bool:
@@ -317,16 +352,44 @@ def date_ok(v) -> bool:
 
 
 def entry_problems(entry, directory_id: str, document_version=None, output_document_version=None) -> list[str]:
-    """The entry format's types and bounds (docs/entry-format.md). Every object is closed."""
+    """The entry format's types and bounds (docs/entry-format.md), version 2. Every object is closed.
+
+    A reader of version 2 refuses any other entry format version, version 1 included, before it reads
+    the entry's other members: their closed form is another one."""
+    if isinstance(entry, dict) and not (is_int(entry.get("entryVersion")) and entry["entryVersion"] == ENTRY_VERSION):
+        return [f"entry: entryVersion {entry.get('entryVersion')!r} is not 2; a version-2 reader refuses any other entry format version"]
     required = {
-        "entryVersion", "id", "title", "direction", "pack", "requires", "sourceKinds",
-        "licence", "author", "assertion", "fixtures", "verification",
+        "entryVersion", "kind", "id", "title", "direction", "requires", "sourceKinds",
+        "licence", "author", "assertion", "verification",
     }
-    problems = closed(entry, required, {"dialect", "output", "description", "compatibility", "upgrade"}, "entry")
+    optional = {"pack", "fixtures", "dialect", "output", "description", "compatibility", "upgrade"}
+    problems = closed(entry, required, optional, "entry")
     if problems:
         return problems
-    if not is_int(entry["entryVersion"]) or entry["entryVersion"] != 1:
-        problems.append("entry: entryVersion is not the integer 1")
+    kind = entry["kind"]
+    preset = kind == "preset"
+    if kind not in ENTRY_KINDS:
+        problems.append("entry: kind is not dialect or preset")
+    elif preset:
+        # RFC 0019 §3: a preset has direction input, no pack and no fixtures, an empty verification, a
+        # dialect of version 3 and no profile in requires.
+        for name in ("pack", "fixtures"):
+            if name in entry:
+                problems.append(f"entry: a preset has no {name}")
+        if entry["direction"] != "input":
+            problems.append(f"entry: a preset's direction is input, not {entry['direction']!r}")
+        if entry["verification"] != []:
+            problems.append("entry: a preset's verification is the empty array")
+        if isinstance(entry.get("dialect"), dict) and entry["dialect"].get("dialectVersion") != 3:
+            problems.append("dialect: a preset's dialectVersion is 3")
+        if isinstance(entry["requires"], dict):
+            for name in ("inputProfile", "connectionProfile"):
+                if name in entry["requires"]:
+                    problems.append(f"requires: a preset names no profile, and this one names {name}")
+    else:
+        for name in ("pack", "fixtures"):
+            if name not in entry:
+                problems.append(f"entry: {name} is required for kind dialect")
     if not id_ok(entry["id"]):
         problems.append("entry: id is not of the form ^[a-z0-9]+(\\.[a-z0-9-]+)+$, 3 to 128 characters")
     elif entry["id"] != directory_id:
@@ -373,8 +436,10 @@ def entry_problems(entry, directory_id: str, document_version=None, output_docum
                 if bound:
                     problems.append(bound)
 
-    pack = entry["pack"]
-    if isinstance(pack, dict):
+    pack = entry.get("pack")
+    if "pack" not in entry:
+        pass
+    elif isinstance(pack, dict):
         problems += closed(pack, {"id"}, {"versions", "digests"}, "pack")
         if not (text_ok(pack.get("id"), 1, 2048) and ABSOLUTE_URI.fullmatch(pack["id"])):
             problems.append("pack: id is not an absolute URI of at most 2048 characters (Core §4)")
@@ -463,8 +528,10 @@ def entry_problems(entry, directory_id: str, document_version=None, output_docum
                 if kind not in listed:
                     problems.append(f"entry: sourceKinds names {kind}, not a kind of dialect version {version}")
 
-    fixtures = entry["fixtures"]
-    if isinstance(fixtures, list):
+    fixtures = entry.get("fixtures")
+    if "fixtures" not in entry or preset:
+        pass  # a preset's fixtures are refused above, whatever they hold
+    elif isinstance(fixtures, list):
         if direction == "output":
             if fixtures:
                 problems.append("entry: fixtures is not an empty array for direction output")
@@ -522,7 +589,7 @@ def size_problems(directory: Path, entry) -> list[str]:
     for name in ("entry.json", "README.md"):
         if (directory / name).stat().st_size > MAX_TEXT_FILE:
             problems.append(f"{name} is over 64 KiB")
-    for fixture in entry["fixtures"]:
+    for fixture in entry.get("fixtures", []):
         total = sum(f.stat().st_size for f in (directory / fixture["path"]).rglob("*") if f.is_file())
         if total > MAX_FIXTURE_DIR:
             problems.append(f"{fixture['path']} is over 16 MiB")
@@ -550,7 +617,7 @@ def tree_problems(tree: Tree) -> list[str]:
     for path in sorted(by_path.keys() - dirs.keys()):
         problems.append(f"{path}: listed in the manifest, no such entry")
     for path in sorted(dirs.keys() & by_path.keys()):
-        problems += directory_problems(dirs[path], path, by_path[path])
+        problems += directory_problems(dirs[path], path, by_path[path], tree.releases)
     return problems
 
 
@@ -609,7 +676,10 @@ def policy_problems(name, policy) -> list[str]:
     return problems
 
 
-def directory_problems(directory: Path, path: str, row: dict) -> list[str]:
+def directory_problems(directory: Path, path: str, row: dict, releases=None) -> list[str]:
+    """One entry against its manifest row: digests, the entry's form, its documents' forms, its fixtures.
+    `releases` gives the catalog's earlier releases for the upgrade-key check (Tree.releases)."""
+    releases = example_releases if releases is None else releases
     parts = path.split("/")
     expected_id = f"{parts[1]}.{parts[2]}"
     problems: list[str] = []
@@ -634,6 +704,7 @@ def directory_problems(directory: Path, path: str, row: dict) -> list[str]:
         "output": ("output.json", "outputDigest", direction in ("output", "both")),
     }
     canonical = {}
+    form_refused = False
     for key, (name, column, wanted) in documents.items():
         present = (directory / name).is_file()
         if wanted and not present:
@@ -647,6 +718,12 @@ def directory_problems(directory: Path, path: str, row: dict) -> list[str]:
         data = (directory / name).read_bytes()
         if digest(data) != row.get(column):
             problems.append(f"{path}: {name} does not match the manifest's {column}")
+        if key == "dialect":
+            # RFC 0019 §§3–4: the catalog's own form checker, for either kind, replayed or not.
+            refusal = dialect_form.check(data)
+            if refusal:
+                problems.append(f"{path}: dialect.json is refused by the catalog's form checker, {refusal[0]}: {refusal[1]}")
+                form_refused = True
         try:
             canonical[key] = (load_strict(data), digest(canon(load_strict(data))))
         except ValueError as error:
@@ -671,19 +748,51 @@ def directory_problems(directory: Path, path: str, row: dict) -> list[str]:
     problems += [f"{path}: {p}" for p in shape]
     if shape:
         return problems
+    if row.get("kind") in ENTRY_KINDS and row["kind"] != entry["kind"]:
+        problems.append(f"{path}: the manifest's kind {row['kind']} is not entry.json's kind {entry['kind']}")
+    # What the dialect's sources are is read only from a document whose form holds.
+    document = None if form_refused else canonical.get("dialect", (None,))[0]
+    if entry["kind"] == "preset":
+        problems += [f"{path}: {p}" for p in preset_problems(directory, document)]
+    problems += [f"{path}: {p}" for p in source_kind_problems(entry, document)]
+    problems += [f"{path}: {p}" for p in upgrade_history_problems(entry, releases)]
     problems += [f"{path}: {p}" for p in size_problems(directory, entry)]
     if "dialect" in canonical and canonical["dialect"][1] != entry["dialect"]["digest"]:
         problems.append(f"{path}: dialect.digest is not the digest of dialect.json's canonical bytes")
     if "output" in canonical and canonical["output"][1] != entry["output"]["digest"]:
         problems.append(f"{path}: output.digest is not the digest of output.json's canonical bytes")
-    for fixture in entry["fixtures"]:
+    for fixture in entry.get("fixtures", []):
         prep = directory / fixture["path"] / "preparation.json"
         if not prep.is_file():
             problems.append(f"{path}: {fixture['path']} has no preparation.json")
         elif digest(prep.read_bytes()) != fixture["preparationDigest"]:
             problems.append(f"{path}: {fixture['name']}'s preparation.json does not match its preparationDigest")
-    problems += fixture_set_problems(directory, path, entry, row, canonical.get("dialect", (None,))[0])
+    problems += fixture_set_problems(directory, path, entry, row, document)
     return problems
+
+
+def preset_problems(directory: Path, document) -> list[str]:
+    """RFC 0019 §3: a preset's directory holds exactly entry.json, dialect.json and README.md, and every
+    source of its dialect that has an unbound form under RFC 0018 §4.4 is unbound."""
+    problems = []
+    for item in sorted(directory.iterdir()):
+        if item.name not in PRESET_FILES or item.is_symlink() or not item.is_file():
+            problems.append(f"a preset's directory holds {item.name}, and holds only entry.json, dialect.json and README.md")
+    sources = document.get("sources", []) if isinstance(document, dict) else []
+    for source in sources:
+        if dialect_form.classification(source) == "bound":
+            problems.append(f"a preset's source {source['name']!r} is bound: every source with an unbound form is unbound")
+    return problems
+
+
+def source_kind_problems(entry: dict, document) -> list[str]:
+    """`sourceKinds` names the source kinds the dialect uses (RFC 0019 §3), as a set."""
+    if not isinstance(document, dict):
+        return []
+    used = sorted({s["kind"] for s in document.get("sources", [])})
+    if sorted(set(entry["sourceKinds"])) != used:
+        return [f"sourceKinds is {', '.join(entry['sourceKinds'])}; the document's sources are of {', '.join(used) or 'no kind'}"]
+    return []
 
 
 def fixture_set_problems(directory: Path, path: str, entry: dict, row: dict, dialect_document) -> list[str]:
@@ -691,7 +800,7 @@ def fixture_set_problems(directory: Path, path: str, entry: dict, row: dict, dia
     listed = row.get("fixtures")
     if not isinstance(listed, list):
         return []  # the manifest's form refuses the row (manifest_problems)
-    names = [fixture["name"] for fixture in entry["fixtures"]]
+    names = [fixture["name"] for fixture in entry.get("fixtures", [])]
     listed_names = [f.get("name") if isinstance(f, dict) else None for f in listed]
     if listed_names != names:
         return [
@@ -700,7 +809,7 @@ def fixture_set_problems(directory: Path, path: str, entry: dict, row: dict, dia
         ]
     problems = []
     unbound = has_unbound_source(dialect_document)
-    for fixture, listing in zip(entry["fixtures"], listed):
+    for fixture, listing in zip(entry.get("fixtures", []), listed):
         where = f"{path}: {fixture['path']}"
         held = directory / fixture["path"]
         if not held.is_dir():
@@ -718,6 +827,8 @@ def fixture_set_problems(directory: Path, path: str, entry: dict, row: dict, dia
             problems.append(f"{where} holds {name}, which the manifest's file list does not name")
         for name in sorted(set(files) - held_names):
             problems.append(f"{where} has no {name}, which the manifest's file list names")
+        if dialect_document is None:
+            continue  # no dialect whose form holds: its sources are not classified (the form check refuses it)
         if unbound and BINDING not in files:
             problems.append(f"{where}: binding.json is required: the dialect has an unbound source")
         if BINDING in files and not unbound:
@@ -731,12 +842,15 @@ def binding_problems(where: str, path: Path, entry: dict, dialect_document) -> l
     """A fixture's binding document, held by the catalog itself and not only by a replay: its byte bound
     (RFC 0018 §12, 65,536 bytes inclusive) always, read no further when over it; and, for a dialect with
     an unbound source, its form (RFC 0018 §4.4): a closed object of `dialect`, the entry's dialect digest,
-    and `sources`, naming each unbound source of the dialect and no other name, each a closed
-    `{profile, profileDigest}`."""
+    and `sources`, naming each unbound source of the dialect and no other name. An `operation`'s
+    assignment is a closed `{profile, profileDigest}`; a `research` source's a closed
+    `{profile, profileDigest, webProfiles}`, `webProfiles` assigning exactly the web capabilities the
+    source requests, each a closed `{profile, profileDigest}`."""
     size = path.stat().st_size
     if size > MAX_BINDING_BYTES:
         return [f"{where} is {size} bytes, over 65,536"]
-    unbound = unbound_source_names(dialect_document)
+    unbound_sources = dialect_form.unbound_sources(dialect_document)
+    unbound = set(unbound_sources)
     if not unbound:
         return []
     try:
@@ -754,16 +868,41 @@ def binding_problems(where: str, path: Path, entry: dict, dialect_document) -> l
     for name, value in sources.items():
         if name not in unbound:
             problems.append(f"{where}: sources names {name!r}, which is not an unbound source of the dialect")
-        bad = closed(value, {"profile", "profileDigest"}, set(), f"{where}: sources.{name}")
+        source = unbound_sources.get(name, {})
+        research = source.get("kind") == "research"
+        members = {"profile", "profileDigest", "webProfiles"} if research else {"profile", "profileDigest"}
+        bad = closed(value, members, set(), f"{where}: sources.{name}")
         problems += bad
         if bad:
             continue
-        if not is_str(value["profile"]):
-            problems.append(f"{where}: sources.{name}: profile is not a non-empty string")
-        if not digest_ok(value["profileDigest"]):
-            problems.append(f"{where}: sources.{name}: profileDigest is not a sha256 digest")
+        problems += assignment_problems(f"{where}: sources.{name}", value)
+        if research:
+            web = value["webProfiles"]
+            capabilities = source.get("capabilities") if isinstance(source.get("capabilities"), list) else []
+            requested = {c for c in capabilities if c in ("search", "page")}
+            if not isinstance(web, dict):
+                problems.append(f"{where}: sources.{name}: webProfiles is not an object")
+                continue
+            if set(web) != requested:
+                problems.append(
+                    f"{where}: sources.{name}: webProfiles assigns {', '.join(sorted(web)) or 'nothing'}, not exactly the web "
+                    f"capabilities the source requests ({', '.join(sorted(requested)) or 'none'})"
+                )
+            for capability, assignment in sorted(web.items()):
+                at = f"{where}: sources.{name}.webProfiles.{capability}"
+                bad = closed(assignment, {"profile", "profileDigest"}, set(), at)
+                problems += bad or assignment_problems(at, assignment)
     for name in sorted(unbound - sources.keys()):
         problems.append(f"{where}: sources does not name the unbound source {name!r}")
+    return problems
+
+
+def assignment_problems(where: str, value: dict) -> list[str]:
+    problems = []
+    if not is_str(value["profile"]):
+        problems.append(f"{where}: profile is not a non-empty string")
+    if not digest_ok(value["profileDigest"]):
+        problems.append(f"{where}: profileDigest is not a sha256 digest")
     return problems
 
 
@@ -782,14 +921,24 @@ VERSION_UNREAD = "a dialect version this reader does not read"
 def verifier_results(tree: Tree) -> list[tuple[str, str, str]]:
     """(label, "ok" | "skip" | "problem", message) for each fixture of each entry in the tree.
 
-    A fixture whose source kind the verifier defines and cannot recompute (`kind-unread`) is a
-    skip naming the kind: its digests (rules 3 and 4) still hold it.
+    A fixture whose source kind the verifier defines and cannot recompute (`kind-unread`), or whose
+    dialect version it does not implement, is a skip naming the kind or the version: its digests
+    (rules 3 and 4) and the catalog's form checker still hold it. A fixture of a dialect with a
+    `research` source is refused instead, not skipped, until the pinned verifier reads RFC 0018's
+    round 8 (RFC 0019 §4). A preset has no fixtures, and the verifier is not used for it.
     """
     results: list[tuple[str, str, str]] = []
     for directory in tree.entry_dirs():
         path = directory.relative_to(tree.base).as_posix()
         entry = load_strict((directory / "entry.json").read_bytes())
-        for fixture in entry["fixtures"]:
+        research = False
+        if (directory / "dialect.json").is_file():
+            try:
+                document = load_strict((directory / "dialect.json").read_bytes())
+                research = any(isinstance(s, dict) and s.get("kind") == "research" for s in document.get("sources", []))
+            except (ValueError, AttributeError, TypeError):
+                pass  # the form checker refuses it (tree_problems)
+        for fixture in entry.get("fixtures", []):
             label = f"{path}/{fixture['name']}"
             fixture_dir = directory / fixture["path"]
             command = [
@@ -807,12 +956,15 @@ def verifier_results(tree: Tree) -> list[tuple[str, str, str]]:
             except ValueError:
                 results.append((label, "problem", "the verifier printed no answer"))
                 continue
+            unread = None
             if answer.get("refused") == "kind-unread":
-                kinds = ", ".join(entry["sourceKinds"])
-                results.append((label, "skip", f"the verifier cannot recompute a source of kind {kinds} (kind-unread); held by its digests only"))
+                unread = f"the verifier cannot recompute a source of kind {', '.join(entry['sourceKinds'])} (kind-unread)"
             elif answer.get("refused") == "input-malformed" and VERSION_UNREAD in answer.get("detail", ""):
-                version = entry["dialect"]["dialectVersion"]
-                results.append((label, "skip", f"the verifier does not implement dialect version {version}; held by its digests only"))
+                unread = f"the verifier does not implement dialect version {entry['dialect']['dialectVersion']}"
+            if unread and research:
+                results.append((label, "problem", f"{unread}; a research source's fixture is refused, not skipped, until the pinned verifier reads RFC 0018's round 8 (RFC 0019 §4)"))
+            elif unread:
+                results.append((label, "skip", f"{unread}; held by its digests only"))
             elif "reading" not in answer:
                 results.append((label, "problem", f"the verifier answered {json.dumps(answer, sort_keys=True)}"))
             elif answer["reading"].get("digest") != fixture["preparationDigest"]:
@@ -824,6 +976,92 @@ def verifier_results(tree: Tree) -> list[tuple[str, str, str]]:
 
 def verifier_problems(tree: Tree) -> list[str]:
     return [f"{label}: {message}" for label, status, message in verifier_results(tree) if status == "problem"]
+
+
+# ---------------------------------------------------------------------------------------------
+# The upgrade keys against the catalog's earlier releases (RFC 0019 §3)
+
+
+def git(repo: Path, *args: str) -> bytes | None:
+    """A local git command's output, or None when it fails. No network: tags, objects and blobs only."""
+    environment = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"}
+    try:
+        result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, timeout=60, env=environment)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return result.stdout if result.returncode == 0 else None
+
+
+def release_being_made(environment=os.environ) -> str | None:
+    """The release a run is held for: the tag of a run at refs/tags/<tag> in the release-tag grammar (a tag
+    push, or release.yml calling ci.yml), else None, for a branch or a pull request."""
+    ref = environment.get("GITHUB_REF", "")
+    tag = ref[len("refs/tags/"):] if ref.startswith("refs/tags/") else None
+    return tag if tag is not None and release_tag_ok(tag) else None
+
+
+def catalog_releases(repo: Path, below: str | None = None):
+    """The catalog's releases lower in tag order than `below` (all of them when None), in tag order, as
+    `[(tag, manifest.json's blob at the tag's commit, or None)]`; None when the tags cannot be read.
+
+    A release is a tag in the release-tag grammar resolved to a commit, an annotated tag peeled; a tag
+    that resolves to no commit is no release. The manifest is read as the commit's blob."""
+    listing = git(repo, "tag", "--list")
+    if listing is None:
+        return None
+    tags = sorted({t for t in listing.decode("utf-8", "replace").splitlines() if release_tag_ok(t)}, key=tag_order)
+    releases = []
+    for tag in tags:
+        if below is not None and tag_order(tag) >= tag_order(below):
+            continue
+        commit = git(repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}")
+        if commit is None:
+            continue
+        releases.append((tag, git(repo, "cat-file", "blob", f"{commit.decode('ascii').strip()}:manifest.json")))
+    return releases
+
+
+def repository_releases():
+    return catalog_releases(ROOT, release_being_made())
+
+
+def example_releases():
+    """The example catalog's earlier releases (tests/fixtures/releases/<tag>/manifest.json), in tag order."""
+    found = [d for d in EXAMPLE_RELEASES.iterdir() if d.is_dir() and release_tag_ok(d.name)]
+    return [(d.name, (d / "manifest.json").read_bytes()) for d in sorted(found, key=lambda d: tag_order(d.name))]
+
+
+def release_rows(data) -> list[tuple[str, str]]:
+    """An earlier release's manifest, read for each row's `id` and `entryDigest` whatever its form, entry
+    format version 1 included; it is not imported as version 2 (RFC 0019 §3)."""
+    try:
+        rows = json.loads(data.decode("utf-8")) if isinstance(data, bytes) else None
+    except (UnicodeDecodeError, ValueError):
+        return []
+    if not isinstance(rows, list):
+        return []
+    return [
+        (r["id"], r["entryDigest"]) for r in rows
+        if isinstance(r, dict) and isinstance(r.get("id"), str) and isinstance(r.get("entryDigest"), str)
+    ]
+
+
+def upgrade_history_problems(entry: dict, releases) -> list[str]:
+    """RFC 0019 §3: each `upgrade` key equals the entryDigest of the row with this entry's id in the manifest
+    of an earlier release, lower in tag order than the release being made. A catalog with no earlier release
+    admits no upgrade, and releases that cannot be read check no key: there is no form-only fallback."""
+    if "upgrade" not in entry:
+        return []
+    found = releases()
+    if found is None:
+        return ["upgrade: the catalog's earlier releases cannot be read (fetch its tags), so no upgrade key is admitted"]
+    if not found:
+        return ["upgrade: the catalog has no earlier release, so no upgrade is admitted"]
+    held = {d for _, data in found for i, d in release_rows(data) if i == entry["id"]}
+    return [
+        f"upgrade: the key {key!r} is the entryDigest of no row with id {entry['id']} in an earlier release's manifest"
+        for key in entry["upgrade"] if key not in held
+    ]
 
 
 # ---------------------------------------------------------------------------------------------
@@ -894,7 +1132,7 @@ def link_problems(base: Path) -> list[str]:
 
 class RepositoryTree(unittest.TestCase):
     def test_manifest_and_entries(self):
-        tree = Tree(ROOT)
+        tree = Tree(ROOT, repository_releases)
         self.assertEqual(tree_problems(tree), [])
 
     def test_says_how_many_entries(self):
@@ -970,9 +1208,15 @@ class ExampleEntry(unittest.TestCase):
             return {**entry["pack"], **changes}
 
         refused = {
-            "entryVersion 2": with_(entryVersion=2),
+            "entryVersion 1": with_(entryVersion=1),
+            "entryVersion 3": with_(entryVersion=3),
             "entryVersion true": with_(entryVersion=True),
-            "entryVersion string": with_(entryVersion="1"),
+            "entryVersion string": with_(entryVersion="2"),
+            "kind missing": {k: v for k, v in entry.items() if k != "kind"},
+            "kind other": with_(kind="recipe"),
+            "kind not a string": with_(kind=["dialect"]),
+            "pack missing for kind dialect": {k: v for k, v in entry.items() if k != "pack"},
+            "fixtures missing for kind dialect": {k: v for k, v in entry.items() if k != "fixtures"},
             "id upper case": with_(id="Example.fx"),
             "id without a dot": with_(id="examplefx"),
             "id too long": with_(id="a." + "b" * 127),
@@ -1106,20 +1350,38 @@ class UnreadKindExample(unittest.TestCase):
 
 
 class UnreadVersionExample(unittest.TestCase):
-    """A version-3 fixture is held by its digests until the verifier implements version 3."""
+    """A version-3 dialect with a round-8 `research` source, unbound, its fixture carrying binding.json (RFC 0019 §3,
+    corrected under round 8). Its form, its classification and its binding document hold; its fixture is refused,
+    not skipped, until the pinned verifier reads round 8 (RFC 0019 §4)."""
 
     tree = Tree(EXAMPLE.parent / "unread-version-entry")
 
-    def test_digests_hold_it(self):
+    def test_its_form_classification_and_binding_hold(self):
         self.assertEqual(tree_problems(self.tree), [])
+        directory = self.tree.entry_dirs()[0]
+        document = load_strict((directory / "dialect.json").read_bytes())
+        self.assertIsNone(dialect_form.check((directory / "dialect.json").read_bytes()))
+        self.assertEqual(unbound_source_names(document), {"recipe"})
+        self.assertIn("binding.json", self.tree.manifest()[0]["fixtures"][0]["files"])
 
     @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
-    def test_the_skip_reason_names_the_version(self):
-        results = verifier_results(self.tree)
-        self.assertEqual(len(results), 1)
-        _, status, message = results[0]
-        self.assertEqual(status, "skip")
-        self.assertIn("dialect version 3", message)
+    def test_its_fixture_is_refused_at_the_pinned_verifier(self):
+        # The pinned verifier reads neither version 3 nor a profile's research declaration: a refusal, a failure.
+        self.assertEqual([status for _, status, _ in verifier_results(self.tree)], ["problem"])
+
+    @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
+    def test_a_research_fixture_is_refused_where_another_would_be_skipped(self):
+        # With profiles the pinned verifier reads, it answers with its unread-version detail, which skips a fixture
+        # of any other source kind (the unbound example); a fixture of a research source is refused instead.
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = scratch_tree(UNREAD_VERSION, tmp)
+            (tree.entry_dirs()[0] / "fixtures" / "valid" / "profiles.json").write_bytes(b"[]")
+            results = verifier_results(tree)
+            self.assertEqual([status for _, status, _ in results], ["problem"])
+            self.assertIn("does not implement dialect version 3", results[0][2])
+            self.assertIn("a research source's fixture is refused, not skipped", results[0][2])
 
     @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
     def test_another_malformed_refusal_stays_a_failure(self):
@@ -1157,9 +1419,10 @@ class TwoDocumentExamples(unittest.TestCase):
 
     def test_the_manifest_rows_carry_the_digests_the_documents_have(self):
         _, _, _, row = self.entry_and_row(self.both)
-        self.assertEqual(sorted(row), ["dialectDigest", "entryDigest", "fixtures", "id", "outputDigest", "path"])
+        self.assertEqual(sorted(row), ["dialectDigest", "entryDigest", "fixtures", "id", "kind", "outputDigest", "path"])
         _, _, _, row = self.entry_and_row(self.output)
-        self.assertEqual(sorted(row), ["entryDigest", "fixtures", "id", "outputDigest", "path"])
+        self.assertEqual(sorted(row), ["entryDigest", "fixtures", "id", "kind", "outputDigest", "path"])
+        self.assertEqual(row["kind"], "dialect")
         self.assertEqual(row["fixtures"], [])
         self.assertEqual(manifest_problems([row]), [])
         self.assertTrue(manifest_problems([{**row, "outputDigest": "x"}]))
@@ -1385,11 +1648,16 @@ class AuthoringMetadata(unittest.TestCase):
     def test_example_fixture_against_the_preparation_verifier(self):
         self.assertEqual([status for _, status, _ in verifier_results(self.tree)], ["ok"])
 
-    def test_the_upgrade_note_is_keyed_by_the_previous_bytes(self):
+    def test_the_upgrade_note_is_keyed_by_the_previous_releases_bytes(self):
+        # RFC 0019 §3: the key is the entryDigest of this entry's row in an earlier release's manifest: here the
+        # example catalog's v0.1.0, of entry format version 1, whose row pins the entry.json it published.
         entry = self.entry()
-        previous = {k: v for k, v in entry.items() if k not in ("description", "compatibility", "upgrade")}
-        stored = (json.dumps(previous, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
-        self.assertEqual(list(entry["upgrade"]), [digest(stored)])
+        release = EXAMPLE_RELEASES / "v0.1.0"
+        rows = dict(release_rows((release / "manifest.json").read_bytes()))
+        published = (release / "entries/example/fx-metadata/entry.json").read_bytes()
+        self.assertEqual(list(entry["upgrade"]), [rows["example.fx-metadata"]])
+        self.assertEqual(rows["example.fx-metadata"], digest(published))
+        self.assertEqual(load_strict(published)["entryVersion"], 1)
 
     def test_each_bound_in_place(self):
         entry = self.entry()
@@ -1450,12 +1718,21 @@ class UnboundExample(unittest.TestCase):
         self.assertIn("binding.json", self.tree.manifest()[0]["fixtures"][0]["files"])
 
     def test_which_dialects_have_an_unbound_source(self):
+        # RFC 0019 §3, as #166 settled it: an operation with all four catalog members and no binding member, or a
+        # research source with none of its three binding members, is unbound; partial sets are not, and are
+        # refused by the form checker as input-malformed.
         unbound = load_strict((self.tree.entry_dirs()[0] / "dialect.json").read_bytes())
         bound = load_strict((EXAMPLE_TREE.entry_dirs()[0] / "dialect.json").read_bytes())
         self.assertTrue(has_unbound_source(unbound))
         self.assertFalse(has_unbound_source(bound))
         source = bound["sources"][0]
         self.assertFalse(has_unbound_source({"sources": [{k: v for k, v in source.items() if k != "profileDigest"}]}))
+        self.assertFalse(has_unbound_source({"sources": [{k: v for k, v in source.items() if k not in ("profile", "profileDigest")}]}))
+        partial = {k: v for k, v in unbound["sources"][0].items() if k != "record"}
+        self.assertFalse(has_unbound_source({"sources": [partial]}))
+        self.assertEqual(dialect_form.check(json.dumps({**unbound, "sources": [partial]}).encode())[0], "input-malformed")
+        self.assertTrue(has_unbound_source({"sources": [{"name": "r", "kind": "research"}]}))
+        self.assertFalse(has_unbound_source({"sources": [{"name": "r", "kind": "research", "profile": "ai"}]}))
         self.assertFalse(has_unbound_source({"sources": [{"name": "f", "kind": "selected-file"}]}))
         self.assertFalse(has_unbound_source(None))
 
@@ -1606,6 +1883,20 @@ REFUSED_TREES = {
             "entries/example/fx-unbound: fixtures/valid: binding.json: sources names 'rates', which is not an unbound source of the dialect",
         ],
     ),
+    'binding-research-unrequested-capability': (
+        'unread-version-entry',
+        [('path', 'entries/example/research/fixtures/valid/binding.json')],
+        [
+            'entries/example/research: fixtures/valid: binding.json: sources.recipe: webProfiles assigns search, not exactly the web capabilities the source requests (none)',
+        ],
+    ),
+    'binding-research-without-web-profiles': (
+        'unread-version-entry',
+        [('path', 'entries/example/research/fixtures/valid/binding.json')],
+        [
+            'entries/example/research: fixtures/valid: binding.json: sources.recipe: missing webProfiles',
+        ],
+    ),
     'binding-with-another-member': (
         'unbound-entry',
         [('path', 'entries/example/fx-unbound/fixtures/valid/binding.json')],
@@ -1711,6 +2002,62 @@ REFUSED_TREES = {
             'entries/example/fx-metadata: entry: description is empty',
         ],
     ),
+    'dialect-kind-without-fixtures': (
+        'metadata-entry',
+        [('member', 'fixtures')],
+        [
+            'entries/example/fx-metadata: entry: fixtures is required for kind dialect',
+        ],
+    ),
+    'dialect-kind-without-pack': (
+        'metadata-entry',
+        [('member', 'pack')],
+        [
+            'entries/example/fx-metadata: entry: pack is required for kind dialect',
+        ],
+    ),
+    'dialect-refused-though-every-fixture-is-skipped': (
+        'unbound-entry',
+        [('path', 'entries/example/fx-unbound/dialect.json'), ('member', 'dialect'), ('path', 'manifest.json')],
+        [
+            "entries/example/fx-unbound: dialect.json is refused by the catalog's form checker, input-malformed: version 3 is written one way: provider is a member of version 2 alone (§2)",
+        ],
+    ),
+    'dialect-research-partial-binding': (
+        'unread-version-entry',
+        [('path', 'entries/example/research/dialect.json'), ('member', 'dialect'), ('path', 'manifest.json')],
+        [
+            "entries/example/research: dialect.json is refused by the catalog's form checker, input-malformed: research source 'recipe' has profile but not all of profile, profileDigest and webProfiles: partial binding members (§4.4)",
+        ],
+    ),
+    'dialect-unbound-operation-partial': (
+        'unbound-entry',
+        [('path', 'entries/example/fx-unbound/dialect.json'), ('member', 'dialect'), ('path', 'manifest.json')],
+        [
+            "entries/example/fx-unbound: dialect.json is refused by the catalog's form checker, input-malformed: operation source 'fx' has platform, operation, shape: neither its bound form (profile and profileDigest) nor its unbound form (platform, operation, shape and record) (§4.4)",
+        ],
+    ),
+    'entry-kind-other': (
+        'metadata-entry',
+        [('member', 'kind')],
+        [
+            'entries/example/fx-metadata: entry: kind is not dialect or preset',
+        ],
+    ),
+    'entry-version-1': (
+        'metadata-entry',
+        [('member', 'entryVersion')],
+        [
+            'entries/example/fx-metadata: entry: entryVersion 1 is not 2; a version-2 reader refuses any other entry format version',
+        ],
+    ),
+    'entry-without-kind': (
+        'metadata-entry',
+        [('member', 'kind')],
+        [
+            'entries/example/fx-metadata: entry: missing kind',
+        ],
+    ),
     'fixture-binding-without-unbound-source': (
         'metadata-entry',
         [('path', 'entries/example/fx-metadata/fixtures/valid/binding.json'), ('path', 'manifest.json')],
@@ -1738,6 +2085,13 @@ REFUSED_TREES = {
         [('path', 'entries/example/fx-metadata/fixtures/valid/sources.json')],
         [
             "entries/example/fx-metadata: fixtures/valid has no sources.json, which the manifest's file list names",
+        ],
+    ),
+    'fixture-research-unbound-without-binding': (
+        'unread-version-entry',
+        [('path', 'entries/example/research/fixtures/valid/binding.json'), ('path', 'manifest.json')],
+        [
+            'entries/example/research: fixtures/valid: binding.json is required: the dialect has an unbound source',
         ],
     ),
     'fixture-unbound-source-without-binding': (
@@ -1873,6 +2227,13 @@ REFUSED_TREES = {
             'manifest[0]: path is not entries/example/fx-metadata, the path its id names',
         ],
     ),
+    'manifest-row-kind-other': (
+        'metadata-entry',
+        [('path', 'manifest.json')],
+        [
+            'manifest[0]: kind is not dialect or preset',
+        ],
+    ),
     'manifest-row-member-twice': (
         'metadata-entry',
         [('path', 'manifest.json')],
@@ -1901,6 +2262,133 @@ REFUSED_TREES = {
             'manifest[0]: missing fixtures',
         ],
     ),
+    'manifest-row-without-kind': (
+        'metadata-entry',
+        [('path', 'manifest.json')],
+        [
+            'manifest[0]: missing kind',
+        ],
+    ),
+    'preset-dialect-changed': (
+        'preset-entry',
+        [('path', 'entries/example/company-research/dialect.json')],
+        [
+            "entries/example/company-research: dialect.digest is not the digest of dialect.json's canonical bytes",
+            "entries/example/company-research: dialect.json does not match the manifest's dialectDigest",
+        ],
+    ),
+    'preset-dialect-version-2': (
+        'preset-entry',
+        [('member', 'dialect')],
+        [
+            "entries/example/company-research: dialect: a preset's dialectVersion is 3",
+            "entries/example/company-research: dialect: dialectVersion is not the document's own version",
+            'entries/example/company-research: entry: sourceKinds names research, not a kind of dialect version 2',
+        ],
+    ),
+    'preset-direction-both': (
+        'preset-entry',
+        [('member', 'direction')],
+        [
+            "entries/example/company-research: entry: a preset's direction is input, not 'both'",
+            'entries/example/company-research: entry: output is required for direction both',
+            'entries/example/company-research: no output.json',
+            'entries/example/company-research: the manifest lacks outputDigest for direction both',
+        ],
+    ),
+    'preset-holds-a-binding-document': (
+        'preset-entry',
+        [('path', 'entries/example/company-research/binding.json')],
+        [
+            "entries/example/company-research: a preset's directory holds binding.json, and holds only entry.json, dialect.json and README.md",
+        ],
+    ),
+    'preset-holds-a-fixture-directory': (
+        'preset-entry',
+        [('path', 'entries/example/company-research/fixtures')],
+        [
+            "entries/example/company-research: a preset's directory holds fixtures, and holds only entry.json, dialect.json and README.md",
+        ],
+    ),
+    'preset-operation-bound': (
+        'preset-entry',
+        [('path', 'entries/example/company-research/dialect.json'), ('member', 'dialect'), ('path', 'manifest.json')],
+        [
+            "entries/example/company-research: a preset's source 'registry' is bound: every source with an unbound form is unbound",
+        ],
+    ),
+    'preset-requires-input-profile': (
+        'preset-entry',
+        [('member', 'requires')],
+        [
+            'entries/example/company-research: requires: a preset names no profile, and this one names inputProfile',
+        ],
+    ),
+    'preset-research-bound': (
+        'preset-entry',
+        [('path', 'entries/example/company-research/dialect.json'), ('member', 'dialect'), ('path', 'manifest.json')],
+        [
+            "entries/example/company-research: a preset's source 'primary' is bound: every source with an unbound form is unbound",
+        ],
+    ),
+    'preset-row-fixtures-not-empty': (
+        'preset-entry',
+        [('path', 'manifest.json')],
+        [
+            "entries/example/company-research: the manifest's fixtures are valid, not entry.json's none in its order",
+            "manifest[0]: a preset row's fixtures is not the empty array",
+        ],
+    ),
+    'preset-row-kind-dialect': (
+        'preset-entry',
+        [('path', 'manifest.json')],
+        [
+            "entries/example/company-research: the manifest's kind dialect is not entry.json's kind preset",
+        ],
+    ),
+    'preset-row-with-output-digest': (
+        'preset-entry',
+        [('path', 'manifest.json')],
+        [
+            'entries/example/company-research: the manifest has outputDigest for direction input',
+            'manifest[0]: a preset row has no outputDigest',
+        ],
+    ),
+    'preset-source-kind-not-read': (
+        'preset-entry',
+        [('path', 'entries/example/company-research/dialect.json'), ('member', 'dialect'), ('path', 'manifest.json')],
+        [
+            "entries/example/company-research: dialect.json is refused by the catalog's form checker, kind-unread: source kind web is not one the catalog's form checker reads; it reads operation, selected-file and research",
+        ],
+    ),
+    'preset-verification-not-empty': (
+        'preset-entry',
+        [('member', 'verification')],
+        [
+            "entries/example/company-research: entry: a preset's verification is the empty array",
+        ],
+    ),
+    'preset-with-fixtures': (
+        'preset-entry',
+        [('member', 'fixtures')],
+        [
+            'entries/example/company-research: entry: a preset has no fixtures',
+        ],
+    ),
+    'preset-with-pack': (
+        'preset-entry',
+        [('member', 'pack')],
+        [
+            'entries/example/company-research: entry: a preset has no pack',
+        ],
+    ),
+    'source-kinds-not-the-documents': (
+        'metadata-entry',
+        [('member', 'sourceKinds')],
+        [
+            "entries/example/fx-metadata: sourceKinds is operation, selected-file; the document's sources are of operation",
+        ],
+    ),
     'upgrade-33-members': (
         'metadata-entry',
         [('member', 'upgrade')],
@@ -1920,6 +2408,20 @@ REFUSED_TREES = {
         [('member', 'upgrade')],
         [
             "entries/example/fx-metadata: upgrade: the key 'v0.1.0' is not a sha256 digest",
+        ],
+    ),
+    'upgrade-key-not-in-an-earlier-release': (
+        'metadata-entry',
+        [('member', 'upgrade')],
+        [
+            "entries/example/fx-metadata: upgrade: the key 'sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' is the entryDigest of no row with id example.fx-metadata in an earlier release's manifest",
+        ],
+    ),
+    'upgrade-key-of-another-entry': (
+        'metadata-entry',
+        [('member', 'upgrade')],
+        [
+            "entries/example/fx-metadata: upgrade: the key 'sha256:5d6cb179820cebbabcdb568b158ff29e2a66a328c02ed734c4293d3234b8a7b4' is the entryDigest of no row with id example.fx-metadata in an earlier release's manifest",
         ],
     ),
     'upgrade-note-2049-characters': (
@@ -1943,11 +2445,25 @@ REFUSED_TREES = {
             "entries/example/fx-metadata: verification[0]: readers[0]'s commit 'main' is not 7 to 40 lower-case hexadecimal digits",
         ],
     ),
+    'verification-reader-dot-segment': (
+        'metadata-entry',
+        [('member', 'verification')],
+        [
+            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/tools/./dialect_verify.py@f821757fcaf5cb9831dbcb1f8b386a5ead793e4a' has an empty, '.' or '..' path segment",
+        ],
+    ),
     'verification-reader-empty-path': (
         'metadata-entry',
         [('member', 'verification')],
         [
             "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/@f821757fcaf5cb9831dbcb1f8b386a5ead793e4a' has no path",
+        ],
+    ),
+    'verification-reader-segment-character': (
+        'metadata-entry',
+        [('member', 'verification')],
+        [
+            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/tools/dialect+verify.py@f821757fcaf5cb9831dbcb1f8b386a5ead793e4a' has a path segment of a character outside [A-Za-z0-9_.-]",
         ],
     ),
     'verification-reader-without-commit': (
@@ -1978,9 +2494,11 @@ def restore(tree: Path, base: Path, steps) -> None:
     """Revert a refused tree's one change, in place (a scratch copy)."""
     for step in steps:
         if step[0] == "member":
+            # The member restored from the base, or removed where the base has none, in the base's order.
             entry_dir = tree / Tree(base).entry_dirs()[0].relative_to(base)
             entry = load_strict((entry_dir / "entry.json").read_bytes())
-            entry[step[1]] = load_strict((Tree(base).entry_dirs()[0] / "entry.json").read_bytes())[step[1]]
+            original = load_strict((Tree(base).entry_dirs()[0] / "entry.json").read_bytes())
+            entry = {k: original[k] if k == step[1] else entry[k] for k in original if k == step[1] or k in entry}
             (entry_dir / "entry.json").write_bytes((json.dumps(entry, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
             rows = load_strict((tree / "manifest.json").read_bytes())
             for row in rows:
@@ -2099,15 +2617,15 @@ class BindingDocument(unittest.TestCase):
 
 
 class ReaderLocators(unittest.TestCase):
-    """verification[].readers: `<owner>/<name>/<path>@<commit>`, the catalog's reading of RFC 0019 §3's
-    `<repository>/<path>@<commit>` until the RFC gives its grammar (judgment-pack-spec#166, item 5)."""
+    """verification[].readers: `<owner>/<name>/<path>@<commit>`, RFC 0019 §3's reader-locator grammar (#166):
+    path segments of [A-Za-z0-9_.-]+, none empty, `.` or `..`; the last `@` separates the commit."""
 
     def test_well_formed_locators(self):
         for reader in [
             READER,
             "Judgment-Pack/judgment-pack-runner/cmd/verify-run@82116bf",
             "a/b/c@" + "0" * 40,
-            "Owner_1/name.with-dots/a/./b.py@abcdef0",
+            "Owner_1/name.with-dots/a/.b/b..c/b.py@abcdef0",
             "o" * 100 + "/n/p@1234567",
             "o/" + "n" * 100 + "/p@1234567",
             "o/n/" + "p" * 188 + "@1234567",
@@ -2124,10 +2642,406 @@ class ReaderLocators(unittest.TestCase):
             "r", "", "a/b/c", "a/b/c@", "a/b/c@123456", "a/b/c@" + "0" * 41, "a/b/c@ABCDEF0", "a/b/c@main",
             "a/b@1234567", "a/b/@1234567", "/b/c@1234567", "a//c@1234567", "a/b/c//d@1234567", "a/b/c/@1234567",
             "a/b/../c@1234567", "a/b/c/..@1234567", "o" * 101 + "/b/c@1234567", "a/" + "n" * 101 + "/c@1234567",
+            "a/b/./c@1234567", "a/b/.@1234567", "a/b/c+d@1234567", "a/b/c d@1234567", "a/b/c:d@1234567", "a/b/é@1234567",
+            "a/b/c@d@1234567",
             "a b/c/d@1234567", "a/b/c@1234567\n", "o/n/" + "p" * 189 + "@1234567", None, 7,
         ]:
             with self.subTest(repr(reader)):
                 self.assertTrue(reader_problems("r", reader))
+
+
+PRESET = EXAMPLE.parent / "preset-entry"
+UNREAD_VERSION = EXAMPLE.parent / "unread-version-entry"
+
+
+def scratch_tree(source: Path, tmp: str) -> Tree:
+    import shutil
+
+    shutil.copytree(source, Path(tmp), dirs_exist_ok=True)
+    return Tree(Path(tmp))
+
+
+def rewrite_entry(tree: Tree, alter) -> None:
+    """Change the tree's one entry.json and let the manifest's entryDigest follow its bytes."""
+    directory = tree.entry_dirs()[0]
+    entry = load_strict((directory / "entry.json").read_bytes())
+    alter(entry)
+    (directory / "entry.json").write_bytes((json.dumps(entry, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
+    rows = tree.manifest()
+    rows[0]["entryDigest"] = digest((directory / "entry.json").read_bytes())
+    tree.manifest_path.write_bytes((json.dumps(rows, indent=2) + "\n").encode("utf-8"))
+
+
+def rewrite_dialect(tree: Tree, alter) -> None:
+    """Change the tree's dialect.json, and let dialect.digest, entryDigest and dialectDigest follow."""
+    directory = tree.entry_dirs()[0]
+    document = load_strict((directory / "dialect.json").read_bytes())
+    alter(document)
+    data = json.dumps(document, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+    (directory / "dialect.json").write_bytes(data)
+    rewrite_entry(tree, lambda e: e["dialect"].update(digest=digest(canon(document))))
+    rows = tree.manifest()
+    rows[0]["dialectDigest"] = digest(data)
+    tree.manifest_path.write_bytes((json.dumps(rows, indent=2) + "\n").encode("utf-8"))
+
+
+class EntryFormatVersion(unittest.TestCase):
+    """RFC 0019 §3: entry format version 2 requires `kind`; a version-2 reader refuses a version-1 entry and a
+    version-1 manifest, and the empty manifest fits both forms."""
+
+    def test_every_example_is_of_version_2_with_its_kind(self):
+        for tree in [EXAMPLE, METADATA, UNBOUND, PRESET, UNREAD_VERSION] + [EXAMPLE.parent / n for n in ("unread-kind-entry", "both-entry", "output-entry")]:
+            with self.subTest(tree.name):
+                entry = load_strict((Tree(tree).entry_dirs()[0] / "entry.json").read_bytes())
+                row = Tree(tree).manifest()[0]
+                self.assertEqual((entry["entryVersion"], entry["kind"]), (2, row["kind"]))
+                self.assertEqual(entry["kind"], "preset" if tree == PRESET else "dialect")
+
+    def test_a_version_1_entry_is_refused(self):
+        published = EXAMPLE_RELEASES / "v0.1.0" / "entries/example/fx-convert/entry.json"
+        entry = load_strict(published.read_bytes())
+        self.assertEqual((entry["entryVersion"], "kind" in entry), (1, False))
+        self.assertEqual(
+            entry_problems(entry, "example.fx-convert", 2),
+            ["entry: entryVersion 1 is not 2; a version-2 reader refuses any other entry format version"],
+        )
+
+    def test_a_version_1_manifest_is_refused(self):
+        rows = load_strict((EXAMPLE_RELEASES / "v0.1.0" / "manifest.json").read_bytes())
+        self.assertEqual(manifest_problems(rows), [f"manifest[{i}]: missing kind" for i in range(len(rows))])
+
+    def test_the_empty_manifest_fits_both_forms(self):
+        self.assertEqual(manifest_problems([]), [])
+        self.assertEqual(release_rows(b"[]\n"), [])
+
+    def test_a_version_1_tree_is_refused_whole(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = scratch_tree(EXAMPLE, tmp)
+            directory = tree.entry_dirs()[0]
+            published = EXAMPLE_RELEASES / "v0.1.0"
+            (directory / "entry.json").write_bytes((published / "entries/example/fx-convert/entry.json").read_bytes())
+            rows = [r for r in load_strict((published / "manifest.json").read_bytes()) if r["id"] == "example.fx-convert"]
+            tree.manifest_path.write_bytes((json.dumps(rows, indent=2) + "\n").encode("utf-8"))
+            refused_entry = "entries/example/fx-convert: entry: entryVersion 1 is not 2; a version-2 reader refuses any other entry format version"
+            self.assertEqual(sorted(tree_problems(tree)), [refused_entry, "manifest[0]: missing kind"])
+            rows[0]["kind"] = "dialect"
+            tree.manifest_path.write_bytes((json.dumps(rows, indent=2) + "\n").encode("utf-8"))
+            self.assertEqual(tree_problems(tree), [refused_entry])
+
+
+class PresetExample(unittest.TestCase):
+    """RFC 0019 §3: a preset has direction input, a dialect of version 3 with every bindable source unbound,
+    exactly entry.json, dialect.json and README.md, no pack, no fixtures, an empty verification and no profile
+    in requires; it is checked by its document's form, its digests and the scans only."""
+
+    tree = Tree(PRESET)
+
+    def entry(self):
+        return load_strict((self.tree.entry_dirs()[0] / "entry.json").read_bytes())
+
+    def test_example_holds_to_the_format(self):
+        self.assertEqual(tree_problems(self.tree), [])
+        directory = self.tree.entry_dirs()[0]
+        self.assertEqual(sorted(p.name for p in directory.iterdir()), sorted(PRESET_FILES))
+        document = load_strict((directory / "dialect.json").read_bytes())
+        self.assertEqual({s["kind"] for s in document["sources"]}, {"operation", "research"})
+        self.assertEqual(
+            {s["name"]: dialect_form.classification(s) for s in document["sources"]},
+            {"registry": "unbound", "primary": "unbound", "secondary": "unbound", "combined": "unbound"},
+        )
+        self.assertIn("sources", document["sources"][-1]["read"])  # a reconciliation read
+
+    def test_its_row(self):
+        row = self.tree.manifest()[0]
+        self.assertEqual(sorted(row), ["dialectDigest", "entryDigest", "fixtures", "id", "kind", "path"])
+        self.assertEqual((row["kind"], row["fixtures"]), ("preset", []))
+
+    def test_the_verifier_is_not_used(self):
+        # The verifier needs fixture inputs and a binding document (RFC 0019 §3): a preset has neither.
+        self.assertEqual(verifier_results(self.tree), [])
+
+    def test_each_rule_in_place(self):
+        entry = self.entry()
+        ident = "example.company-research"
+        self.assertEqual(entry_problems(entry, ident, 3), [])
+        record = {"date": "2026-10-14", "runner": "v0.11.0", "runtime": "v0.32.0", "readers": [READER], "result": "agree"}
+        d = "sha256:" + "a" * 64
+        refused = {
+            "a pack": ({**entry, "pack": {"id": "https://example.com/packs/p", "versions": "1"}}, "entry: a preset has no pack"),
+            "fixtures": ({**entry, "fixtures": []}, "entry: a preset has no fixtures"),
+            "direction output": ({**entry, "direction": "output"}, "entry: a preset's direction is input, not 'output'"),
+            "direction both": ({**entry, "direction": "both"}, "entry: a preset's direction is input, not 'both'"),
+            "a verification record": ({**entry, "verification": [record]}, "entry: a preset's verification is the empty array"),
+            "dialectVersion 2": ({**entry, "dialect": {**entry["dialect"], "dialectVersion": 2}}, "dialect: a preset's dialectVersion is 3"),
+            "dialectVersion 4": ({**entry, "dialect": {**entry["dialect"], "dialectVersion": 4}}, "dialect: a preset's dialectVersion is 3"),
+            "an input profile": ({**entry, "requires": {"inputProfile": d}}, "requires: a preset names no profile, and this one names inputProfile"),
+            "a connection profile": ({**entry, "requires": {"connectionProfile": d}}, "requires: a preset names no profile, and this one names connectionProfile"),
+        }
+        for label, (candidate, problem) in refused.items():
+            with self.subTest(label):
+                self.assertIn(problem, entry_problems(candidate, ident, 3))
+        self.assertEqual(entry_problems({**entry, "requires": {"platform": "example-registry"}}, ident, 3), [])
+
+    def test_its_document_is_held_by_the_catalogs_form_checker(self):
+        import tempfile
+
+        for label, alter, fragment in [
+            ("research of another field type", lambda d: d["sources"][1]["fields"][0].update(type="float"), "type is not one of"),
+            ("a research source partly bound", lambda d: d["sources"][1].update(profile="ai"), "partial binding members"),
+            ("an operation partly unbound", lambda d: d["sources"][0].pop("record"), "neither its bound form"),
+            ("a reconciliation without its guards for one field", lambda d: d["sources"][3]["read"]["rule"]["clauses"][4].update(when={"op": "always"}), "has no guard for /current/fields/employee-count"),
+            ("a version-2 document", lambda d: d.update(version=2), "a version-2 document names source kind research"),
+            ("an http source", lambda d: d["sources"].append({"name": "h", "kind": "http", "profile": "h", "profileDigest": "sha256:" + "a" * 64, "maxAge": 60, "method": "GET", "path": "items", "read": {"copy": {"facts": [{"target": "/h", "source": ""}], "evidence": []}}}), "kind-unread: source kind http"),
+            ("an http source held to its form first", lambda d: d["sources"].append({"name": "h", "kind": "http", "read": {}}), "input-malformed: source 'h' has no member maxAge"),
+        ]:
+            with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
+                tree = scratch_tree(PRESET, tmp)
+                rewrite_dialect(tree, alter)
+                problems = tree_problems(tree)
+                self.assertTrue(any("refused by the catalog's form checker" in p and fragment in p for p in problems), problems)
+
+    def test_a_bound_source_is_refused(self):
+        import tempfile
+
+        def bind(document):
+            source = document["sources"][0]
+            for name in ("platform", "operation", "shape", "record"):
+                source.pop(name)
+            source.update(profile="registry", profileDigest="sha256:" + "a" * 64)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = scratch_tree(PRESET, tmp)
+            rewrite_dialect(tree, bind)
+            self.assertEqual(tree_problems(tree), [
+                "entries/example/company-research: a preset's source 'registry' is bound: every source with an unbound form is unbound",
+            ])
+
+    def test_a_preset_directory_holds_three_files(self):
+        import tempfile
+
+        for extra in ("fixtures/valid/case.json", "binding.json", "output.json", "notes.md"):
+            with self.subTest(extra), tempfile.TemporaryDirectory() as tmp:
+                tree = scratch_tree(PRESET, tmp)
+                path = tree.entry_dirs()[0] / extra
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"{}")
+                name = extra.split("/")[0]
+                self.assertIn(
+                    f"entries/example/company-research: a preset's directory holds {name}, and holds only entry.json, dialect.json and README.md",
+                    tree_problems(tree),
+                )
+
+
+class CatalogFormChecker(unittest.TestCase):
+    """RFC 0019 §§3–4: every dialect.json, of either kind, is held to RFC 0018 §§2–8 and 12 as round 8 amends
+    them by the catalog's own form checker, also when every fixture of the entry is skipped."""
+
+    def test_every_example_document_passes_it(self):
+        for path in sorted((EXAMPLE.parent).glob("*/entries/*/*/dialect.json")):
+            with self.subTest(path.relative_to(EXAMPLE.parent).as_posix()):
+                self.assertIsNone(dialect_form.check(path.read_bytes()))
+
+    def test_a_dialect_entry_whose_fixtures_are_all_skipped_is_still_form_checked(self):
+        import tempfile
+
+        # The unbound example's one fixture is skipped by the pinned verifier (dialect version 3).
+        for label, alter, fragment in [
+            ("a member of version 2 alone", lambda d: d.update(provider=""), "provider is a member of version 2 alone"),
+            ("a source parameter from a later source", lambda d: d["sources"][0].update(parameters={"x": {"from": "later", "pointer": "/x", "type": "string"}}), "is not an earlier source"),
+            ("a rule with no always clause", lambda d: d["sources"][0].update(read={"rule": {"ruleVersion": "1", "parameters": {}, "clauses": [{"when": {"op": "exists", "field": "/x"}, "claim": {"facts": [], "evidence": {}, "acquisitionStatus": "unknown"}, "reason": "r"}]}}), "last clause's when"),
+            ("an admission of a target no source writes", lambda d: d.update(admits={"facts": {"/nothing": ["record"]}}), "which no source writes"),
+        ]:
+            with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
+                tree = scratch_tree(UNBOUND, tmp)
+                rewrite_dialect(tree, alter)
+                problems = tree_problems(tree)
+                self.assertTrue(any("refused by the catalog's form checker, input-malformed" in p and fragment in p for p in problems), problems)
+
+    def test_a_version_or_kind_the_checker_does_not_read_is_refused_by_name(self):
+        import tempfile
+
+        for label, alter, expected in [
+            ("dialect version 4", lambda d: d.update(version=4), "version-unread: dialect version 4 is not one the catalog's form checker reads"),
+            ("source kind sql", lambda d: d["sources"].append({"name": "q", "kind": "sql", "profile": "q", "profileDigest": "sha256:" + "a" * 64, "maxAge": 60, "statement": "select 1", "bindings": [], "read": {"copy": {"facts": [], "evidence": []}}}), "kind-unread: source kind sql is not one the catalog's form checker reads"),
+            ("source kind sql held to its form first", lambda d: d["sources"].append({"name": "q", "kind": "sql", "read": {}}), "input-malformed: source 'q' has no member bindings"),
+        ]:
+            with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
+                tree = scratch_tree(UNBOUND, tmp)
+                rewrite_dialect(tree, alter)
+                self.assertTrue(any(expected in p for p in tree_problems(tree)), tree_problems(tree))
+
+    def test_source_kinds_name_the_kinds_the_document_uses(self):
+        entry = load_strict((Tree(METADATA).entry_dirs()[0] / "entry.json").read_bytes())
+        document = load_strict((Tree(METADATA).entry_dirs()[0] / "dialect.json").read_bytes())
+        self.assertEqual(source_kind_problems(entry, document), [])
+        self.assertEqual(source_kind_problems({**entry, "sourceKinds": ["selected-file"]}, document), [
+            "sourceKinds is selected-file; the document's sources are of operation",
+        ])
+        self.assertEqual(source_kind_problems(entry, None), [])
+
+
+class UpgradeHistory(unittest.TestCase):
+    """RFC 0019 §3: each upgrade key is the entryDigest of this entry's row in an earlier release's manifest, read
+    from the catalog's tags; no upgrade before a first release, and no form-only fallback."""
+
+    def entry(self):
+        return load_strict((Tree(METADATA).entry_dirs()[0] / "entry.json").read_bytes())
+
+    def test_the_example_key_is_an_earlier_releases_row(self):
+        self.assertEqual(upgrade_history_problems(self.entry(), example_releases), [])
+
+    def test_no_earlier_release_admits_no_upgrade(self):
+        self.assertEqual(upgrade_history_problems(self.entry(), lambda: []), [
+            "upgrade: the catalog has no earlier release, so no upgrade is admitted",
+        ])
+        entry = {k: v for k, v in self.entry().items() if k != "upgrade"}
+        self.assertEqual(upgrade_history_problems(entry, lambda: []), [])
+
+    def test_releases_that_cannot_be_read_admit_no_upgrade(self):
+        self.assertEqual(upgrade_history_problems(self.entry(), lambda: None), [
+            "upgrade: the catalog's earlier releases cannot be read (fetch its tags), so no upgrade key is admitted",
+        ])
+        self.assertEqual(catalog_releases(Path("/nonexistent-exchange-checkout")), None)
+
+    def test_a_key_must_be_this_entrys_released_bytes(self):
+        entry = self.entry()
+        key = list(entry["upgrade"])[0]
+        other = digest((EXAMPLE_RELEASES / "v0.1.0/entries/example/fx-convert/entry.json").read_bytes())
+        for label, upgrade in {
+            "another entry's row": {other: "n"},
+            "unpublished bytes": {digest(b"an intermediate entry.json"): "n"},
+            "one good key and one not": {key: "n", other: "n"},
+        }.items():
+            with self.subTest(label):
+                problems = upgrade_history_problems({**entry, "upgrade": upgrade}, example_releases)
+                self.assertEqual(len(problems), 1, problems)
+        renamed = {**entry, "id": "example.other"}
+        self.assertEqual(len(upgrade_history_problems(renamed, example_releases)), 1)
+
+    def test_an_earlier_manifest_is_read_whatever_its_form(self):
+        rows = [{"id": "a.b", "entryDigest": "sha256:1"}, {"id": "a.c"}, "row", {"id": 1, "entryDigest": "x"}]
+        self.assertEqual(release_rows(json.dumps(rows).encode()), [("a.b", "sha256:1")])
+        for data in (None, b"{}", b"not json", b"\xff", b'{"a": [}'):
+            with self.subTest(data):
+                self.assertEqual(release_rows(data), [])
+
+    def test_the_release_being_made(self):
+        self.assertEqual(release_being_made({"GITHUB_REF": "refs/tags/v0.2.0"}), "v0.2.0")
+        for ref in ("refs/heads/main", "refs/pull/8/merge", "refs/tags/latest", "refs/tags/v0.2", ""):
+            with self.subTest(ref):
+                self.assertIsNone(release_being_made({"GITHUB_REF": ref}))
+        self.assertIsNone(release_being_made({}))
+
+    def test_releases_are_read_from_the_catalogs_tags(self):
+        import shutil
+        import tempfile
+
+        if shutil.which("git") is None:
+            self.skipTest("git is not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            environment = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+            identity = ["-c", "user.name=exchange-tests", "-c", "user.email=exchange-tests@example.invalid", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"]
+
+            def run(*args):
+                subprocess.run(["git", "-C", str(repo), *identity, *args], check=True, capture_output=True, env=environment, timeout=60)
+
+            def commit(manifest: bytes, message: str):
+                (repo / "manifest.json").write_bytes(manifest)
+                run("add", "manifest.json")
+                run("commit", "-q", "-m", message)
+
+            run("init", "-q")
+            commit(b"[]\n", "empty")
+            run("tag", "v0.1.0")
+            version_1 = b'[{"id": "a.b", "path": "entries/a/b", "entryDigest": "sha256:one", "dialectDigest": "sha256:d", "fixtures": []}]\n'
+            commit(version_1, "a version-1 row")
+            run("tag", "-a", "v0.10.0", "-m", "annotated")
+            commit(b'[{"id": "a.b", "kind": "dialect", "entryDigest": "sha256:two"}]\n', "a version-2 row")
+            run("tag", "v0.9.0")
+            run("tag", "latest")
+            run("tag", "v0.9")
+            tree = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD^{tree}"], capture_output=True, check=True, env=environment).stdout.decode().strip()
+            run("tag", "v0.11.0", tree)  # a tag that names a tree, not a commit: no release
+            (repo / "manifest.json").unlink()
+            run("rm", "-q", "--cached", "manifest.json")
+            run("commit", "-q", "-m", "no manifest")
+            run("tag", "v0.12.0")
+
+            releases = catalog_releases(repo)
+            self.assertEqual([t for t, _ in releases], ["v0.1.0", "v0.9.0", "v0.10.0", "v0.12.0"])
+            self.assertEqual([release_rows(d) for _, d in releases], [[], [("a.b", "sha256:two")], [("a.b", "sha256:one")], []])
+            self.assertIsNone(dict(releases)["v0.12.0"])
+            self.assertEqual([t for t, _ in catalog_releases(repo, "v0.10.0")], ["v0.1.0", "v0.9.0"])
+            self.assertEqual(catalog_releases(repo, "v0.1.0"), [])
+            entry = {"id": "a.b", "upgrade": {"sha256:one": "n"}}
+            self.assertEqual(upgrade_history_problems(entry, lambda: catalog_releases(repo)), [])
+            self.assertEqual(len(upgrade_history_problems(entry, lambda: catalog_releases(repo, "v0.10.0"))), 1)
+            self.assertEqual(len(upgrade_history_problems(entry, lambda: catalog_releases(repo, "v0.1.0"))), 1)
+
+    @unittest.skipUnless((ROOT / ".git").exists(), "not a git checkout: the repository's releases are read from its tags")
+    def test_the_repository_reads_its_releases(self):
+        self.assertIsNotNone(repository_releases())
+
+    @unittest.skipUnless(os.environ.get("GITHUB_ACTIONS") == "true", "outside CI: whether the tags were fetched is the checkout's")
+    def test_ci_fetches_the_catalogs_tags(self):
+        # ci.yml checks the repository out with fetch-depth 0, so the upgrade-key check sees every earlier release.
+        releases = repository_releases()
+        self.assertIsNotNone(releases)
+        made = release_being_made()
+        if made is None or tag_order(made) > tag_order("v0.1.0"):
+            self.assertIn("v0.1.0", [t for t, _ in releases])
+
+
+class ResearchBindingDocument(unittest.TestCase):
+    """A research source's assignment in a fixture's binding.json (RFC 0018 §4.4): exactly profile, profileDigest
+    and webProfiles, the last assigning exactly the web capabilities the source requests."""
+
+    def test_the_form(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = scratch_tree(UNREAD_VERSION, tmp)
+            path = tree.entry_dirs()[0] / "fixtures" / "valid" / "binding.json"
+            document = load_strict(path.read_bytes())
+            assignment = document["sources"]["recipe"]
+            web = {"profile": "web", "profileDigest": "sha256:" + "b" * 64}
+            refused = {
+                "without webProfiles": {k: v for k, v in assignment.items() if k != "webProfiles"},
+                "webProfiles an array": {**assignment, "webProfiles": []},
+                "an unrequested capability": {**assignment, "webProfiles": {"page": web}},
+                "answer assigned as a web capability": {**assignment, "webProfiles": {"answer": web}},
+                "a member more": {**assignment, "model": "model-a"},
+                "an empty profile": {**assignment, "profile": ""},
+                "a profileDigest that is no digest": {**assignment, "profileDigest": "ai"},
+                "the operation form": {"profile": assignment["profile"], "profileDigest": assignment["profileDigest"]},
+            }
+            for label, changed in refused.items():
+                with self.subTest(label):
+                    path.write_bytes(canon({**document, "sources": {"recipe": changed}}))
+                    self.assertTrue(tree_problems(tree), label)
+            path.write_bytes(canon(document))
+            self.assertEqual(tree_problems(tree), [])
+
+    def test_a_requested_capability_is_assigned(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = scratch_tree(UNREAD_VERSION, tmp)
+            rewrite_dialect(tree, lambda d: d["sources"][0].update(capabilities=["answer", "search"]))
+            directory = tree.entry_dirs()[0]
+            path = directory / "fixtures" / "valid" / "binding.json"
+            document = load_strict(path.read_bytes())
+            document["dialect"] = load_strict((directory / "entry.json").read_bytes())["dialect"]["digest"]
+            path.write_bytes(canon(document))
+            self.assertEqual(tree_problems(tree), [
+                "entries/example/research: fixtures/valid: binding.json: sources.recipe: webProfiles assigns nothing, not exactly the web capabilities the source requests (search)",
+            ])
+            document["sources"]["recipe"]["webProfiles"] = {"search": {"profile": "web", "profileDigest": "sha256:" + "b" * 64}}
+            path.write_bytes(canon(document))
+            self.assertEqual(tree_problems(tree), [])
 
 
 class Scans(unittest.TestCase):

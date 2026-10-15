@@ -85,7 +85,9 @@ Every job works on the commit the run was started for, by its digest, not on the
    that commit is on `main`; its notes exist; and the `release` environment has a reviewer rule.
 2. **Runs CI at that commit.** The release calls the commit's own
    [`ci.yml`](../.github/workflows/ci.yml): the `entries` checks, with the specification at the
-   commit it pins. A check `main` has gained since that commit is not run.
+   commit it pins. Each entry's `upgrade` keys are checked against the releases below the tag, read
+   from the repository's tags ([upgrade keys](entry-format.md#authoring-metadata)). A check `main`
+   has gained since that commit is not run.
 3. **Writes the release's files.** `manifest.json` is read as the blob of the tagged commit
    (`git cat-file blob <commit>:manifest.json`) and compared with the checkout; `checksums.txt` is
    written over it and checked.

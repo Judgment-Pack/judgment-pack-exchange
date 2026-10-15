@@ -1,5 +1,6 @@
 {
-  "entryVersion": 1,
+  "entryVersion": 2,
+  "kind": "dialect",
   "id": "example.triage-write",
   "title": "Example: a write-back policy",
   "direction": "output",

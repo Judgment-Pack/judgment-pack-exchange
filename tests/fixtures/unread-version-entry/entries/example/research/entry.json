@@ -1,5 +1,6 @@
 {
-  "entryVersion": 1,
+  "entryVersion": 2,
+  "kind": "dialect",
   "id": "example.research",
   "title": "Example: a version-3 dialect with a research source",
   "direction": "input",
@@ -10,7 +11,7 @@
   "dialect": {
     "path": "dialect.json",
     "dialectVersion": 3,
-    "digest": "sha256:d305112a3618413d071a18efb98a778cf254e91ba54616d9aec66d5ef1237826"
+    "digest": "sha256:a769faee471a145fdfaeb5aee9c6f187f8cff009e07eba071f6dff5aa2f718a2"
   },
   "requires": {},
   "sourceKinds": [
@@ -23,7 +24,7 @@
     {
       "name": "valid",
       "path": "fixtures/valid",
-      "preparationDigest": "sha256:4af2bc1797af2114d110c4f4a04780bc56d856ade969df9a62c1ee604aecfb47"
+      "preparationDigest": "sha256:958f590c43d386766b0e8a548131f3f37f6c54b21c4b821a1eb32da1dc21c5b6"
     }
   ],
   "verification": []

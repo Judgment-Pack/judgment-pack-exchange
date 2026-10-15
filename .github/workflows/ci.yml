@@ -13,9 +13,12 @@ jobs:
   entries:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out the repository
+      # Every commit and tag: an entry's `upgrade` keys are checked against the manifests of the
+      # catalog's earlier releases, read from its tags (RFC 0019 §3; docs/entry-format.md).
+      - name: Check out the repository with its tags
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          fetch-depth: 0
           persist-credentials: false
 
       - name: Check out the specification at the pinned commit

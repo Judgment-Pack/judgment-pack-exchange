@@ -1,13 +1,15 @@
 [
   {
     "id": "example.research",
+    "kind": "dialect",
     "path": "entries/example/research",
-    "entryDigest": "sha256:88d6c9c142985d6bc9a73aca299a4195a3b93b76ed13fc0d7c35e573c9ad97a0",
-    "dialectDigest": "sha256:8f8b783ee7c33897aca4ca743e456c7b4bf803f0bef3ade5bfa0d30b7cb43353",
+    "entryDigest": "sha256:a7393a3809ce733a4690c4920aa8352a902bb335f9366a2ecfbcfb7a6283124d",
+    "dialectDigest": "sha256:20b270dc27060209eb1074c8de38407fce75ff6c8a170af5fde32b1bbf762cd1",
     "fixtures": [
       {
         "name": "valid",
         "files": [
+          "binding.json",
           "case.json",
           "preparation.json",
           "profiles.json"

@@ -1,14 +1,12 @@
 {
-  "entryVersion": 1,
+  "entryVersion": 2,
+  "kind": "dialect",
   "id": "example.a-first",
   "title": "Example: currency conversion with authoring metadata",
   "description": "Asks a gateway tool to convert an invoice's amount into the pack's currency, and copies the request fact and two evidence requirements from the case. An example of the authoring metadata: what the entry is for, the desk and runner releases its author says it fits, and a review note for an upgrade from the entry's previous bytes.",
   "compatibility": {
     "desk": ">=v0.14.0 <v0.15.0",
     "runner": "v0.11.0"
-  },
-  "upgrade": {
-    "sha256:52895deee7e135c99f48553cfcd01586aafcfea29232c03698aac6bec1ca6c31": "The previous entry held the same dialect and the same fixture, without authoring metadata. Nothing to review but the three members added: description, compatibility and upgrade."
   },
   "direction": "input",
   "pack": {
