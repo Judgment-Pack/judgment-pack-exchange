@@ -3,6 +3,17 @@
     "id": "example.fx-convert",
     "path": "entries/example/fx-convert",
     "entryDigest": "sha256:5d6cb179820cebbabcdb568b158ff29e2a66a328c02ed734c4293d3234b8a7b4",
-    "dialectDigest": "sha256:d960dcd2423a07a478ee7defc4649072903141e99c39201466e58ec52d73efbe"
+    "dialectDigest": "sha256:d960dcd2423a07a478ee7defc4649072903141e99c39201466e58ec52d73efbe",
+    "fixtures": [
+      {
+        "name": "valid",
+        "files": [
+          "case.json",
+          "preparation.json",
+          "profiles.json",
+          "sources.json"
+        ]
+      }
+    ]
   }
 ]
