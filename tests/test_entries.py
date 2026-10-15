@@ -2793,7 +2793,8 @@ class PresetExample(unittest.TestCase):
             ("an operation partly unbound", lambda d: d["sources"][0].pop("record"), "neither its bound form"),
             ("a reconciliation without its guards for one field", lambda d: d["sources"][3]["read"]["rule"]["clauses"][4].update(when={"op": "always"}), "has no guard for /current/fields/employee-count"),
             ("a version-2 document", lambda d: d.update(version=2), "a version-2 document names source kind research"),
-            ("an http source", lambda d: d["sources"].append({"name": "h", "kind": "http", "read": {}}), "kind-unread: source kind http"),
+            ("an http source", lambda d: d["sources"].append({"name": "h", "kind": "http", "profile": "h", "profileDigest": "sha256:" + "a" * 64, "maxAge": 60, "method": "GET", "path": "items", "read": {"copy": {"facts": [{"target": "/h", "source": ""}], "evidence": []}}}), "kind-unread: source kind http"),
+            ("an http source held to its form first", lambda d: d["sources"].append({"name": "h", "kind": "http", "read": {}}), "input-malformed: source 'h' has no member maxAge"),
         ]:
             with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
                 tree = scratch_tree(PRESET, tmp)
@@ -2863,7 +2864,8 @@ class CatalogFormChecker(unittest.TestCase):
 
         for label, alter, expected in [
             ("dialect version 4", lambda d: d.update(version=4), "version-unread: dialect version 4 is not one the catalog's form checker reads"),
-            ("source kind sql", lambda d: d["sources"].append({"name": "q", "kind": "sql", "read": {}}), "kind-unread: source kind sql is not one the catalog's form checker reads"),
+            ("source kind sql", lambda d: d["sources"].append({"name": "q", "kind": "sql", "profile": "q", "profileDigest": "sha256:" + "a" * 64, "maxAge": 60, "statement": "select 1", "bindings": [], "read": {"copy": {"facts": [], "evidence": []}}}), "kind-unread: source kind sql is not one the catalog's form checker reads"),
+            ("source kind sql held to its form first", lambda d: d["sources"].append({"name": "q", "kind": "sql", "read": {}}), "input-malformed: source 'q' has no member bindings"),
         ]:
             with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
                 tree = scratch_tree(UNBOUND, tmp)

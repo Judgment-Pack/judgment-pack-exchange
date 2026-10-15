@@ -12,13 +12,16 @@ versions or digests) it was written against (none for a preset), and the directi
 ## Fixtures
 
 Where each fixture's recorded records come from, and what was removed from them. Fixtures are
-required for kind `dialect`: at least one for every such entry. A preset has none.
+required for kind `dialect` and direction `input` or `both`: at least one for every such entry. An
+entry of direction `output` holds `fixtures: []`, and a preset has none. Every fixture of an entry
+with a `research` source is synthetic.
 
 ## Personal data and credentials
 
 - [ ] No credentials, tokens or personal data are in any file (CI refuses recognised shapes and local
       paths only, and its silence proves nothing; a maintainer refuses the rest before merge).
-- [ ] Records in the fixtures are recorded or synthetic, and say which.
+- [ ] Records in the fixtures are recorded or synthetic, and say which; for an entry with a
+      `research` source, every fixture is synthetic.
 
 ## Checklist
 

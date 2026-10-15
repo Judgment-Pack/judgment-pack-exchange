@@ -124,8 +124,8 @@ re-executes no research recipe.
   imported.
 - Replay a fixture under the installation's own bindings or profiles. Replay uses the fixture's own
   binding document and profiles.
-- Substitute profiles in a version-2 entry. Using one against the installation's sources is
-  re-authoring, an open question (RFC 0019, Unresolved question 7).
+- Substitute profiles in an entry with dialect version 2. Using one against the installation's
+  sources is re-authoring, an open question (RFC 0019, Unresolved question 7).
 - Let a newer tag, or an author's compatibility statement, replace the installation's review.
 - Remove or replace an imported entry silently.
 - Rely on the catalog's CI in place of its own checks.

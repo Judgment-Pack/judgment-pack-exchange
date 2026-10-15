@@ -278,7 +278,9 @@ equals the file set in the release's tree.
   `fixtures/<name>`, relative to the entry's directory. For a `research` source, `sources.json` holds
   the research record as the acquisition's result under RFC 0018 §4.3; each retained response is
   held by its own receipt and digest, and the whole record's receipt is present only when it came
-  through a gateway source.
+  through a gateway source. Every fixture published with an entry that has a `research` source is
+  synthetic (RFC 0019 §6, after RFC 0018's round-8 Security and privacy rule): its records are
+  made for the purpose, never recorded from a real person, customer or account.
 
 ## The catalog's form checker
 
@@ -312,17 +314,28 @@ The cases it holds:
   §4.4's classification, profile and catalog members, `maxAge`, templates (`$param`, `$text` and its
   placeholders) and calculations (§7); `selected-file` of provider `local-file` or `google-drive`;
   `research` of round 8: the question as a string template, constraints, model, evidence, requested
-  fields of the six types, capabilities in order, and the bound or unbound profile assignments.
-- **Reads** (§6): `unwrap`, copies and derivation rules with every condition and claim form; a plain
-  research read's closed pointer list and no fact taken from under `values`; the reconciliation read
-  of §6.4, with its earlier research sources, its admissible `from` pointers and its status and
-  absence guards.
+  fields of the six types, capabilities in order, and the bound or unbound profile assignments;
+  `http`, `sql` and `web` of version 3, with `profile`, `profileDigest` and `maxAge` and the
+  members §4.3 gives each (an `http` `method` of `GET` or `POST`, its `path` and `query` members as
+  string templates, no `body` beside `GET`, `headers` as header names; a `sql` `statement` as a
+  string, never a template, and `bindings` of `{name, type, value}` with a `$param` value; a `web`
+  `url` as a string or a `$param` naming a string parameter). Where §4.3 names a member without a
+  form, the checker takes the form a path or a name has: `http`'s `path` a string template, its
+  `headers` and a `sql` binding's `name` and `type` non-empty strings.
+- **Reads** (§6): `unwrap`, copies and derivation rules with every condition and claim form; every
+  `unwrap`, copy and rule pointer of a plain research read on §4.3's closed list, whatever else the
+  read carries (descendants admitted under `/fields/<name>/value` alone, an observation's
+  `/fields/<name>/values/<index>/value` exactly), and no value taken from under `values` by an
+  `unwrap` pointer, a copy's source or a claim form's `from`; the reconciliation read of §6.4, with
+  its earlier research sources, its admissible `from` pointers and its status and absence guards.
 - **Targets and admission** (§8): no fact target equal to or below another, no requirement an
   evidence target of two sources, and `admits` naming only written targets.
 
-It does not read the source kinds `http`, `sql` and `web`, which version 3 proposes: a document naming
-one is refused, `kind-unread`, naming the kind. A document of a dialect version other than 2 and 3 is
-refused, `version-unread`, naming the version. Nothing a profile, a case, an acquisition or a binding
+It does not read the source kinds `http`, `sql` and `web`, which version 3 proposes: as RFC 0018 §11
+orders its phases, each such source is held to its form with every other part of the document
+first, and only a document whose every form holds is then refused, `kind-unread`, naming the kind.
+A document of a dialect version other than 2 and 3 is refused, `version-unread`, naming the
+version. Nothing a profile, a case, an acquisition or a binding
 document decides is checked by the form checker (`profile-mismatch`, admission and the findings of
 RFC 0018 §11): it is given the document alone. The specification's preparation verifier is not used
 for a preset.

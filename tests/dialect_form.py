@@ -16,15 +16,16 @@ What it reads (docs/entry-format.md, "The catalog's form checker"):
 - reads, copies, rules and their conditions, templates, calculations, targets and admission (§§6–8);
 - the byte and count bounds of §12 that a document alone carries.
 
-The source kinds `http`, `sql` and `web`, which version 3 proposes, are not read: a document naming one
-is refused by name, `kind-unread`, before the rest of its sources' forms. Nothing a profile, a case, an
-acquisition or a binding document decides is checked here (`profile-mismatch`, `parameter-invalid`,
-admission, the findings of §11): a form checker is given the document alone.
+The source kinds `http`, `sql` and `web`, which version 3 proposes, are held to the forms §4.3 gives
+them, as every source is, and then not read: a document naming one is refused by name, `kind-unread`,
+once every form holds (§11, phases 5 and 6). Nothing a profile, a case, an acquisition or a binding
+document decides is checked here (`profile-mismatch`, `parameter-invalid`, admission, the findings of
+§11): a form checker is given the document alone.
 
 A refusal is `(code, detail)`, the code one of `input-over-bound`, `input-malformed`, `version-unread`
 and `kind-unread` (§11), the detail naming the rule. The phases are §11's, in its order: the bounds
-measured on bytes, the strict read, the bounds that are counts, the version, the form; `kind-unread`
-is reported once the document's members, its case and its sources' names and kinds are read.
+measured on bytes, the strict read, the bounds that are counts, the version, the form, and last a
+source kind the checker does not read.
 
 Standard library only.
 """
@@ -528,13 +529,14 @@ class Form:
         self.unmapped(document)
         self.sources_named(sources)
         self.case(document["case"])
-        unread = [s["kind"] for s in sources if s["kind"] not in KINDS_READ]
-        if unread:
-            raise Refusal("kind-unread", f"source kind {unread[0]} is not one the catalog's form checker reads; it reads operation, selected-file and research")
         for index, source in enumerate(sources):
             self.source(source, index, sources)
         self.targets()
         self.admits(document.get("admits"))
+        # §11, phase 6: a kind the checker does not read, once every form holds (phase 5).
+        unread = [s["kind"] for s in sources if s["kind"] not in KINDS_READ]
+        if unread:
+            raise Refusal("kind-unread", f"source kind {unread[0]} is not one the catalog's form checker reads; it reads operation, selected-file and research")
 
     def one_spelling(self, where: str, value) -> None:
         """§2: version 3 is kept only as its encoding writes it, so an optional array or object
@@ -617,8 +619,10 @@ class Form:
             self.operation(source, scope)
         elif kind == "selected-file":
             self.selected_file(source, scope)
-        else:
+        elif kind == "research":
             self.research(source, scope)
+        else:
+            self.version_3_kind(source, scope)
         if isinstance(source["read"], dict) and "sources" in source["read"]:
             if kind != "research":
                 raise malformed(f"source {name!r} of kind {kind} has a reconciliation read, which only a research source has (§6.4)")
@@ -725,16 +729,16 @@ class Form:
         if parameter not in scope:
             raise malformed(f"a template of source {name!r} names {parameter!r}, which is not in its scope (§4.1)")
 
-    def string_template(self, value, name: str, scope: dict) -> None:
+    def string_template(self, value, name: str, scope: dict, member: str = "question") -> None:
         """A string, a $text, or a $param naming a parameter of type string or timestamp (§4.1)."""
         if isinstance(value, str):
             return
         if isinstance(value, dict) and template_form(value):
             self.template(value, name, scope)
             if "$param" in value and scope[value["$param"]] not in ("string", "timestamp"):
-                raise malformed(f"source {name!r}'s question names {value['$param']!r}, not a string or timestamp parameter (§4.1, §4.3)")
+                raise malformed(f"source {name!r}'s {member} names {value['$param']!r}, not a string or timestamp parameter (§4.1, §4.3)")
             return
-        raise malformed(f"source {name!r}'s question is not a string template (§4.3)")
+        raise malformed(f"source {name!r}'s {member} is not a string template (§4.3)")
 
     def calculation(self, calculation, name: str, scope: dict) -> None:
         closed(calculation, f"source {name!r}'s calculation", ("inputs", "tables"))
@@ -762,6 +766,56 @@ class Form:
         self.profile(source, f"source {name!r}")
         self.max_age(source, name)
         self.arguments(source["arguments"], name, scope)
+
+    def version_3_kind(self, source: dict, scope: dict) -> None:
+        """§4.3: an `http`, `sql` or `web` source, of exactly §4's members, `profile`, `profileDigest` and
+        `maxAge` as in §4.1, and the members its kind names. Where the text names a member without a form,
+        the checker takes the form a path or a name has: `http`'s `path`, "a template that yields a path",
+        a string template; its `headers`, "the names of the headers", and a `sql` binding's `name` and
+        `type`, non-empty strings."""
+        name, kind = source["name"], source["kind"]
+        members = {"http": (("method", "path"), ("query", "body", "headers")), "sql": (("statement", "bindings"), ()), "web": (("url",), ())}
+        required, optional = members[kind]
+        closed(source, f"source {name!r}", ("name", "kind", "read") + OPERATION_BINDING + ("maxAge",) + required, ("parameters",) + optional)
+        self.profile(source, f"source {name!r}")
+        self.max_age(source, name)
+        if kind == "http":
+            if source["method"] not in ("GET", "POST"):
+                raise malformed(f"http source {name!r}'s method is not GET or POST (§4.3)")
+            self.string_template(source["path"], name, scope, "path")
+            if "query" in source:
+                query = source["query"]
+                if not isinstance(query, dict) or template_form(query):
+                    raise malformed(f"http source {name!r}'s query is not an object of string templates (§4.3)")
+                for member in query.values():
+                    self.string_template(member, name, scope, "query")
+            if "body" in source:
+                if source["method"] == "GET":
+                    raise malformed(f"http source {name!r} has a body beside GET (§4.3)")
+                self.template(source["body"], name, scope)
+            if "headers" in source and not (isinstance(source["headers"], list) and all(non_empty(h) for h in source["headers"])):
+                raise malformed(f"http source {name!r}'s headers is not an array of header names (§4.3)")
+        elif kind == "sql":
+            if not isinstance(source["statement"], str):
+                raise malformed(f"sql source {name!r}'s statement is not a string, and is never a template (§4.3)")
+            if not isinstance(source["bindings"], list):
+                raise malformed(f"sql source {name!r}'s bindings is not an array (§4.3)")
+            for binding in source["bindings"]:
+                closed(binding, f"a binding of sql source {name!r}", ("name", "type", "value"))
+                if not (non_empty(binding["name"]) and non_empty(binding["type"])):
+                    raise malformed(f"a binding of sql source {name!r} has a name or type that is not a non-empty string (§4.3)")
+                value = binding["value"]
+                if not (isinstance(value, dict) and set(value) == {"$param"}):
+                    raise malformed(f"a binding of sql source {name!r} has a value that is not a $param form (§4.3)")
+                self.template(value, name, scope)
+        else:
+            url = source["url"]
+            if not isinstance(url, str):
+                if not (isinstance(url, dict) and set(url) == {"$param"}):
+                    raise malformed(f"web source {name!r}'s url is not a string or a $param form (§4.3)")
+                self.template(url, name, scope)
+                if scope[url["$param"]] != "string":
+                    raise malformed(f"web source {name!r}'s url names {url['$param']!r}, not a string parameter (§4.3)")
 
     def research(self, source: dict, scope: dict) -> None:
         """§4.3 and §4.4 as round 8 amends them."""
@@ -840,30 +894,30 @@ class Form:
         unwrap = read.get("unwrap")
         if "unwrap" in read and not (isinstance(unwrap, list) and unwrap and all(pointer_ok(p) for p in unwrap)):
             raise malformed(f"source {name!r}'s unwrap is not an array of one to four pointers (§6.1)")
+        taken = list(unwrap or [])
         if "copy" in read:
             facts, evidence = self.copy(read["copy"], f"source {name!r}")
-            pointers = [e["source"] for e in read["copy"]["facts"]] + [e["source"] for e in read["copy"]["evidence"]]
-            selected = [e["source"] for e in read["copy"]["facts"]]
+            taken += [e["source"] for e in read["copy"]["facts"] + read["copy"]["evidence"]]
+            looked_up: list[str] = []
         else:
-            facts, evidence, fields, selected = self.rule(read["rule"], name, scope)
-            pointers = fields + selected
+            facts, evidence, looked_up, selected = self.rule(read["rule"], name, scope)
+            taken += selected
         if research:
-            self.research_pointers(name, unwrap, pointers, selected)
+            self.research_pointers(name, taken, looked_up)
         return facts, evidence
 
-    def research_pointers(self, name: str, unwrap, pointers: list[str], selected: list[str]) -> None:
-        """§4.3, "Reading fields": a plain research read's pointers into R form a closed list, and no
-        fact is taken from under `values`. With `unwrap`, its first pointer is the one read from R."""
+    def research_pointers(self, name: str, taken: list[str], looked_up: list[str]) -> None:
+        """§4.3, "Reading fields": every pointer of a plain research read, whatever else the read carries, is
+        among the closed list, and none of those it takes a value through — an `unwrap` pointer, a copy's
+        source, a claim form's `from` — is under `values`. A condition's field may look up an observation."""
         declared = self.fields[name]
-        if unwrap:
-            pointers, selected = unwrap[:1], []
-        for pointer in pointers:
+        for pointer in taken + looked_up:
             if not research_pointer_ok(pointer, declared):
                 raise malformed(f"research source {name!r} reads {pointer!r}, which is not among the pointers a research read may read (§4.3)")
-        for pointer in selected:
+        for pointer in taken:
             path = tokens(pointer)
             if len(path) > 2 and path[2] == "values":
-                raise malformed(f"research source {name!r} takes a fact from {pointer!r}, under values (§4.3)")
+                raise malformed(f"research source {name!r} takes a value from {pointer!r}, under values (§4.3)")
 
     def copy(self, copy, where: str) -> tuple[list[str], list[str]]:
         """§6.2: exactly facts, of {target, source}, and evidence, of {requirement, source}."""
@@ -1092,8 +1146,8 @@ def placeholders(text: str, name: str) -> list[str]:
 
 def research_pointer_ok(pointer: str, declared: list[str]) -> bool:
     """§4.3's closed list: /fields, /fields/<name>, /fields/<name>/value and its descendants,
-    /fields/<name>/status, /fields/<name>/values/<index>/value (and its descendants, a range's endpoints
-    or a list's items), and /fields/<name>/cites, each <name> a declared field."""
+    /fields/<name>/status, /fields/<name>/values/<index>/value exactly (descendants are given to `value`
+    alone), and /fields/<name>/cites, each <name> a declared field."""
     path = tokens(pointer)
     if path == ["fields"]:
         return True
@@ -1102,7 +1156,7 @@ def research_pointer_ok(pointer: str, declared: list[str]) -> bool:
     rest = path[2:]
     if rest in ([], ["status"], ["cites"]) or rest[:1] == ["value"]:
         return True
-    return len(rest) >= 3 and rest[0] == "values" and INDEX.fullmatch(rest[1]) is not None and rest[2] == "value"
+    return len(rest) == 3 and rest[0] == "values" and INDEX.fullmatch(rest[1]) is not None and rest[2] == "value"
 
 
 def conditions(condition):

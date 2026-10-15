@@ -242,6 +242,25 @@ def research_document() -> dict:
     }
 
 
+def unread_kind_source(kind: str) -> dict:
+    """A well-formed source of a kind version 3 proposes and the checker does not read (§4.3)."""
+    common = {"name": f"by-{kind}", "kind": kind, "profile": kind, "profileDigest": D, "maxAge": 60,
+              "read": {"copy": {"facts": [{"target": f"/{kind}", "source": "/value"}], "evidence": []}}}
+    return {
+        "http": {**common, "method": "POST", "path": {"$text": "items/{{count}}"}, "query": {"q": {"$param": "item"}}, "body": {"id": {"$param": "count"}}, "headers": ["Accept"]},
+        "sql": {**common, "statement": "select state from items where id = :id", "bindings": [{"name": "id", "type": "string", "value": {"$param": "item"}}]},
+        "web": {**common, "url": {"$param": "item"}},
+    }[kind]
+
+
+def with_unread_kinds() -> dict:
+    """Version 3 with an integer case parameter, and one source of each kind the checker does not read."""
+    document = unbound_document()
+    document["case"]["parameters"]["count"] = {"pointer": "/count", "type": "integer"}
+    document["sources"] += [unread_kind_source(k) for k in ("http", "sql", "web")]
+    return document
+
+
 def source(document: dict, name: str) -> dict:
     return next(s for s in document["sources"] if s["name"] == name)
 
@@ -273,6 +292,7 @@ class PassingDocuments(unittest.TestCase):
             "a copy's arrays written empty": altered(unbound_document, lambda d: d["sources"][1]["read"].update(copy={"facts": [], "evidence": []})),
             "a bound research source asking for answer alone": altered(research_document, lambda d: d["sources"].__setitem__(0, research("company", d["sources"][0]["read"], bound=True))),
             "a minus zero": altered(operation_document, lambda d: source(d, "fx")["arguments"].update(zero=0)),
+            "a research read with an unwrap on the closed list": altered(research_document, lambda d: d["sources"][0]["read"].update(unwrap=["/fields/company-id/value", "/fields/roles/value/0"])),
         }.items():
             with self.subTest(label):
                 self.assertIsNone(check(encode(document)))
@@ -452,11 +472,17 @@ class VersionAndKindsNotRead(unittest.TestCase):
                 refused(self, {**operation_document(), "version": version}, "input-malformed", "")
 
     def test_http_sql_and_web(self):
+        # §11, phases 5 and 6: each is held to its form first, and refused as unread only once every form holds.
+        refused(self, with_unread_kinds(), "kind-unread", "source kind http is not one the catalog's form checker reads")
         for kind in ("http", "sql", "web"):
             with self.subTest(kind):
                 document = unbound_document()
-                document["sources"].append({"name": "other", "kind": kind, "profile": "p", "profileDigest": D, "maxAge": 1, "read": {"copy": {"facts": [], "evidence": []}}})
+                document["case"]["parameters"]["count"] = {"pointer": "/count", "type": "integer"}
+                document["sources"].append(unread_kind_source(kind))
                 refused(self, document, "kind-unread", f"source kind {kind} is not one the catalog's form checker reads")
+                incomplete = copy.deepcopy(document)
+                incomplete["sources"][-1].pop("maxAge")
+                refused(self, incomplete, "input-malformed", "has no member maxAge")
                 document["version"] = 2
                 refused(self, document, "input-malformed", f"a version-2 document names source kind {kind}")
 
@@ -552,6 +578,29 @@ def refusal_cases() -> dict:
         "a calculation table of 0 seconds": (O, lambda d: op(d)["calculation"]["tables"].update(t=0), "is not an integer from 1 to 315360000"),
         "a calculation table over ten years": (O, lambda d: op(d)["calculation"]["tables"].update(t=315360001), "is not an integer from 1 to 315360000"),
         "a calculation's inputs an array": (O, lambda d: op(d)["calculation"].update(inputs=[]), "calculation.inputs is not an object"),
+        # §4.3, the kinds version 3 proposes, held to their forms before they are refused as unread
+        "an http source without its path": (with_unread_kinds, lambda d: source(d, "by-http").pop("path"), "has no member path"),
+        "an http source with a member more": (with_unread_kinds, lambda d: source(d, "by-http").update(timeout=1), "has the member 'timeout'"),
+        "an http method other than GET and POST": (with_unread_kinds, lambda d: source(d, "by-http").update(method="PUT"), "method is not GET or POST"),
+        "an http path that is not a string template": (with_unread_kinds, lambda d: source(d, "by-http").update(path=["items"]), "path is not a string template"),
+        "an http path naming an integer parameter": (with_unread_kinds, lambda d: source(d, "by-http").update(path={"$param": "count"}), "path names 'count', not a string or timestamp parameter"),
+        "an http query that is a template form": (with_unread_kinds, lambda d: source(d, "by-http").update(query={"$param": "item"}), "query is not an object of string templates"),
+        "an http query member that is no string template": (with_unread_kinds, lambda d: source(d, "by-http")["query"].update(n=1), "query is not a string template"),
+        "an http body beside GET": (with_unread_kinds, lambda d: source(d, "by-http").update(method="GET"), "has a body beside GET"),
+        "an http body naming no parameter in scope": (with_unread_kinds, lambda d: source(d, "by-http").update(body={"$param": "elsewhere"}), "names 'elsewhere', which is not in its scope"),
+        "http headers with an empty name": (with_unread_kinds, lambda d: source(d, "by-http").update(headers=[""]), "headers is not an array of header names"),
+        "an http source's read malformed": (with_unread_kinds, lambda d: source(d, "by-http")["read"]["copy"]["facts"][0].update(target=""), "is not a fact target"),
+        "a sql statement that is a template": (with_unread_kinds, lambda d: source(d, "by-sql").update(statement={"$param": "item"}), "statement is not a string, and is never a template"),
+        "sql bindings that are not an array": (with_unread_kinds, lambda d: source(d, "by-sql").update(bindings={}), "bindings is not an array"),
+        "a sql binding with a member more": (with_unread_kinds, lambda d: source(d, "by-sql")["bindings"][0].update(position=1), "has the member 'position'"),
+        "a sql binding with an empty name": (with_unread_kinds, lambda d: source(d, "by-sql")["bindings"][0].update(name=""), "name or type that is not a non-empty string"),
+        "a sql binding's value not a $param form": (with_unread_kinds, lambda d: source(d, "by-sql")["bindings"][0].update(value="1"), "value that is not a $param form"),
+        "a sql binding naming runAt": (with_unread_kinds, lambda d: source(d, "by-sql")["bindings"][0].update(value={"$param": "runAt"}), "names runAt"),
+        "a web url that is no string or $param": (with_unread_kinds, lambda d: source(d, "by-web").update(url={"$text": "x"}), "url is not a string or a $param form"),
+        "a web url naming an integer parameter": (with_unread_kinds, lambda d: source(d, "by-web").update(url={"$param": "count"}), "url names 'count', not a string parameter"),
+        "a web source without its profile": (with_unread_kinds, lambda d: source(d, "by-web").pop("profile"), "has no member profile"),
+        "a web source's target overlapping another's": (with_unread_kinds, lambda d: source(d, "by-web")["read"]["copy"]["facts"][0].update(target="/item/state/x"), "one a prefix of the other"),
+        "admits naming a target no source writes beside a web source": (with_unread_kinds, lambda d: d.update(admits={"facts": {"/nothing": ["record"]}}), "which no source writes"),
         # §4.2, selected-file
         "a selected file of another provider": (O, lambda d: source(d, "upload").update(provider="dropbox"), "provider is not local-file or google-drive"),
         "a local file with a profile": (O, lambda d: source(d, "upload").update(profile="p"), "has the member 'profile'"),
@@ -669,6 +718,13 @@ def refusal_cases() -> dict:
         "a condition on an undeclared field": (R, lambda d: banded(d)["read"]["rule"]["clauses"][2]["when"].update(field="/fields/headcount/cites"), "which is not among"),
         "an evidence copy outside the list": (R, lambda d: company(d)["read"]["copy"]["evidence"].append({"requirement": "r", "source": "/responses"}), "which is not among"),
         "an unwrap outside the list": (R, lambda d: company(d)["read"].update(unwrap=["/responses/0/result/text"]), "which is not among"),
+        "an unwrap, then a copy under responses": (R, lambda d: company(d)["read"].update(unwrap=["/fields/company-id/value"], copy={"facts": [{"target": "/company/fields", "source": "/responses/secret"}], "evidence": []}), "reads '/responses/secret', which is not among"),
+        "an unwrap, then a copy under values": (R, lambda d: company(d)["read"].update(unwrap=["/fields/company-id/value"], copy={"facts": [{"target": "/company/fields", "source": "/fields/roles/values/0/value"}], "evidence": []}), "takes a value from '/fields/roles/values/0/value', under values"),
+        "an invalid second unwrap pointer": (R, lambda d: company(d)["read"].update(unwrap=["/fields/company-id/value", "/responses/0/result"]), "reads '/responses/0/result', which is not among"),
+        "an unwrap from values": (R, lambda d: company(d)["read"].update(unwrap=["/fields/roles/values/0/value"]), "takes a value from '/fields/roles/values/0/value', under values"),
+        "an evidence copy from under values": (R, lambda d: company(d)["read"]["copy"]["evidence"].append({"requirement": "r", "source": "/fields/roles/values/0/value"}), "under values"),
+        "a condition below an observation's value": (R, lambda d: banded(d)["read"]["rule"]["clauses"][1]["when"].update(field="/fields/roles/values/1/value/0"), "reads '/fields/roles/values/1/value/0', which is not among"),
+        "a condition at an observation, not its value": (R, lambda d: banded(d)["read"]["rule"]["clauses"][1]["when"].update(field="/fields/roles/values/1"), "which is not among"),
         # §6.4, reconciliation
         "a reconciliation with an unwrap": (R, lambda d: combined(d)["read"].update(unwrap=["/x"]), "has the member 'unwrap'"),
         "a reconciliation with a copy": (R, lambda d: combined(d)["read"].update(copy={"facts": [], "evidence": []}), "has the member 'copy'"),
@@ -712,11 +768,29 @@ class FormRefusals(unittest.TestCase):
             self.assertNotIn(data, seen, f"{label} is the document of {seen.get(data)}")
             seen[data] = label
 
-    def test_kind_unread_comes_after_the_documents_members_and_its_case(self):
-        document = unbound_document()
-        document["sources"].append({"name": "page", "kind": "web", "read": {}})
-        document["case"]["extra"] = 1
-        refused(self, document, "input-malformed", "case has the member 'extra'")
+    def test_kind_unread_comes_after_every_form(self):
+        # §11: phase 5 (every document's form, each source's against its kind's, whatever its kind) before
+        # phase 6 (a kind the reader does not read).
+        for label, alter, fragment in [
+            ("the case", lambda d: d["case"].update(extra=1), "case has the member 'extra'"),
+            ("a read source's form", lambda d: source(d, "items").pop("maxAge"), "has no member maxAge"),
+            ("an unread source's read", lambda d: source(d, "by-web").update(read={}), "not exactly one of copy and rule"),
+            ("the targets", lambda d: source(d, "by-sql")["read"]["copy"]["facts"][0].update(target="/web"), "is also one of"),
+            ("admission", lambda d: d.update(admits={"evidence": {"nothing": ["record"]}}), "which no source writes"),
+        ]:
+            with self.subTest(label):
+                refused(self, altered(with_unread_kinds, alter), "input-malformed", fragment)
+
+    def test_the_observation_pointers(self):
+        # §4.3: descendants are given to /fields/<name>/value alone; /fields/<name>/values/<index>/value is
+        # admitted exactly.
+        declared = ["band", "roles"]
+        for pointer in ["/fields/band/value", "/fields/band/value/min", "/fields/roles/value/0/x", "/fields/roles/values/0/value", "/fields/roles/values/12/value"]:
+            with self.subTest(pointer):
+                self.assertTrue(dialect_form.research_pointer_ok(pointer, declared))
+        for pointer in ["/fields/roles/values/0/value/0", "/fields/band/values/0/value/min", "/fields/roles/values/0", "/fields/roles/values", "/fields/roles/values/01/value", "/fields/roles/values/0/status", "/fields/roles/status/0", "/fields/roles/cites/0"]:
+            with self.subTest(pointer):
+                self.assertFalse(dialect_form.research_pointer_ok(pointer, declared))
 
     def test_the_checker_imports_no_reader(self):
         with open(dialect_form.__file__, encoding="utf-8") as handle:
