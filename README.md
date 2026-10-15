@@ -33,12 +33,15 @@ An entry is a directory `entries/<publisher>/<name>/`:
 - `README.md`: what the dialect is for.
 
 `manifest.json` at the root pins every entry by the SHA-256 of its `entry.json` and of each document it holds,
-`dialect.json` and `output.json`.
-The format is written out in [`docs/entry-format.md`](docs/entry-format.md). The dialect's own
+`dialect.json` and `output.json`, and lists each fixture's files.
+The format is written out in [`docs/entry-format.md`](docs/entry-format.md); what a release of a
+catalog is, and what a consumer verifies before it imports an entry, in
+[`docs/release-contract.md`](docs/release-contract.md); and how this repository cuts a release, in
+[`docs/releasing.md`](docs/releasing.md). The dialect's own
 format is [RFC 0018](https://github.com/Judgment-Pack/judgment-pack-spec/blob/main/rfcs/0018-dialect.md);
 the Exchange's design is recorded in
 [RFC 0019](https://github.com/Judgment-Pack/judgment-pack-spec/blob/main/rfcs/0019-exchange.md),
-which is in progress and not yet merged.
+a Draft, which defines the entry format (§3) and the release contract (§7) that these pages follow.
 
 ## Contributing
 

@@ -1,0 +1,19 @@
+[
+  {
+    "id": "example.fx.metadata",
+    "path": "entries/example.fx/metadata",
+    "entryDigest": "sha256:38138cda51f5dad41c1aad3105730b2e216ae050342907d22ef812a9f283510a",
+    "dialectDigest": "sha256:d960dcd2423a07a478ee7defc4649072903141e99c39201466e58ec52d73efbe",
+    "fixtures": [
+      {
+        "name": "valid",
+        "files": [
+          "case.json",
+          "preparation.json",
+          "profiles.json",
+          "sources.json"
+        ]
+      }
+    ]
+  }
+]

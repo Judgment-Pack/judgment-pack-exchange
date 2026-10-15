@@ -3,6 +3,16 @@
     "id": "example.selected-file",
     "path": "entries/example/selected-file",
     "entryDigest": "sha256:32c6bebc8d96f89a3de07db107f64ddb5d12734a6743854f7ea52ea3869b321e",
-    "dialectDigest": "sha256:86ce72e866e5fdb06c6ecaa8eafa720208c6cd313687f9b8fe860666440f8ea5"
+    "dialectDigest": "sha256:86ce72e866e5fdb06c6ecaa8eafa720208c6cd313687f9b8fe860666440f8ea5",
+    "fixtures": [
+      {
+        "name": "valid",
+        "files": [
+          "case.json",
+          "preparation.json",
+          "profiles.json"
+        ]
+      }
+    ]
   }
 ]

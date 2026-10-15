@@ -4,6 +4,17 @@
     "path": "entries/example/triage-both",
     "entryDigest": "sha256:11b8c9ae7990ab5ecaf8f5c6eac7e6918acb8507965fc7fca5a661a6b66fc7ea",
     "dialectDigest": "sha256:d960dcd2423a07a478ee7defc4649072903141e99c39201466e58ec52d73efbe",
-    "outputDigest": "sha256:1a2f702352a28d6dcd5cf4eeb61fd8a11ed106ddc1c1a2ca3bc2811b3f766e81"
+    "outputDigest": "sha256:1a2f702352a28d6dcd5cf4eeb61fd8a11ed106ddc1c1a2ca3bc2811b3f766e81",
+    "fixtures": [
+      {
+        "name": "valid",
+        "files": [
+          "case.json",
+          "preparation.json",
+          "profiles.json",
+          "sources.json"
+        ]
+      }
+    ]
   }
 ]

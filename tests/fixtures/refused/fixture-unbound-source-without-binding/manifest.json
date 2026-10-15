@@ -1,0 +1,19 @@
+[
+  {
+    "id": "example.fx-unbound",
+    "path": "entries/example/fx-unbound",
+    "entryDigest": "sha256:55d18dcec7711f9bb74a8f81f7ec61097b7722d902f5384733c6e41c7fac18f4",
+    "dialectDigest": "sha256:7b3e407159015b764f32063ab720a8f62b9d0a9617e5162290aed0a807e44baf",
+    "fixtures": [
+      {
+        "name": "valid",
+        "files": [
+          "case.json",
+          "preparation.json",
+          "profiles.json",
+          "sources.json"
+        ]
+      }
+    ]
+  }
+]

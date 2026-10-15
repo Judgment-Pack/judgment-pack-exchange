@@ -1,0 +1,36 @@
+[
+  {
+    "id": "example.fx-metadata",
+    "path": "entries/example/fx-metadata",
+    "entryDigest": "sha256:3fb5dce83ec69d845b4fa2e050585fdbc2bf93c0d23fd5cc2cfc3ee41ede47a0",
+    "dialectDigest": "sha256:d960dcd2423a07a478ee7defc4649072903141e99c39201466e58ec52d73efbe",
+    "fixtures": [
+      {
+        "name": "valid",
+        "files": [
+          "case.json",
+          "preparation.json",
+          "profiles.json",
+          "sources.json"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "example.a-first",
+    "path": "entries/example/a-first",
+    "entryDigest": "sha256:8a08015a80c40de42bd005d189de482d17228d4ecb918729e508579c8310e7e1",
+    "dialectDigest": "sha256:d960dcd2423a07a478ee7defc4649072903141e99c39201466e58ec52d73efbe",
+    "fixtures": [
+      {
+        "name": "valid",
+        "files": [
+          "case.json",
+          "preparation.json",
+          "profiles.json",
+          "sources.json"
+        ]
+      }
+    ]
+  }
+]

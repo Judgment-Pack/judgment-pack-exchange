@@ -1,0 +1,72 @@
+{
+  "entryVersion": 1,
+  "id": "example.fx-metadata",
+  "title": "Example: currency conversion with authoring metadata",
+  "description": "Asks a gateway tool to convert an invoice's amount into the pack's currency, and copies the request fact and two evidence requirements from the case. An example of the authoring metadata: what the entry is for, the desk and runner releases its author says it fits, and a review note for an upgrade from the entry's previous bytes.",
+  "compatibility": {
+    "desk": ">=v0.14.0 <v0.15.0",
+    "runner": "v0.11.0"
+  },
+  "upgrade": {
+    "sha256:5feceb66ffc86f38d952786c6d696c79c2dbc239dd4e91b46729d73a27fb57e9": "n",
+    "sha256:6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b": "n",
+    "sha256:d4735e3a265e16eee03f59718b9b5d03019c07d8b6c51f90da3a666eec13ab35": "n",
+    "sha256:4e07408562bedb8b60ce05c1decfe3ad16b72230967de01f640b7e4729b49fce": "n",
+    "sha256:4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a": "n",
+    "sha256:ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d": "n",
+    "sha256:e7f6c011776e8db7cd330b54174fd76f7d0216b612387a5ffcfb81e6f0919683": "n",
+    "sha256:7902699be42c8a8e46fbbb4501726517e86b22c56a189f7625a6da49081b2451": "n",
+    "sha256:2c624232cdd221771294dfbb310aca000a0df6ac8b66b696d90ef06fdefb64a3": "n",
+    "sha256:19581e27de7ced00ff1ce50b2047e7a567c76b1cbaebabe5ef03f7c3017bb5b7": "n",
+    "sha256:4a44dc15364204a80fe80e9039455cc1608281820fe2b24f1e5233ade6af1dd5": "n",
+    "sha256:4fc82b26aecb47d2868c4efbe3581732a3e7cbcc6c2efb32062c08170a05eeb8": "n",
+    "sha256:6b51d431df5d7f141cbececcf79edf3dd861c3b4069f0b11661a3eefacbba918": "n",
+    "sha256:3fdba35f04dc8c462986c992bcf875546257113072a909c162f7e470e581e278": "n",
+    "sha256:8527a891e224136950ff32ca212b45bc93f69fbb801c3b1ebedac52775f99e61": "n",
+    "sha256:e629fa6598d732768f7c726b4b621285f9c3b85303900aa912017db7617d8bdb": "n",
+    "sha256:b17ef6d19c7a5b1ee83b907c595526dcb1eb06db8227d650d5dda0a9f4ce8cd9": "n",
+    "sha256:4523540f1504cd17100c4835e85b7eefd49911580f8efff0599a8f283be6b9e3": "n",
+    "sha256:4ec9599fc203d176a301536c2e091a19bc852759b255bd6818810a42c5fed14a": "n",
+    "sha256:9400f1b21cb527d7fa3d3eabba93557a18ebe7a2ca4e471cfe5e4c5b4ca7f767": "n",
+    "sha256:f5ca38f748a1d6eaf726b8a42fb575c3c71f1864a8143301782de13da2d9202b": "n",
+    "sha256:6f4b6612125fb3a0daecd2799dfd6c9c299424fd920f9b308110a2c1fbd8f443": "n",
+    "sha256:785f3ec7eb32f30b90cd0fcf3657d388b5ff4297f2f9716ff66e9b69c05ddd09": "n",
+    "sha256:535fa30d7e25dd8a49f1536779734ec8286108d115da5045d77f3b4185d8f790": "n",
+    "sha256:c2356069e9d1e79ca924378153cfbbfb4d4416b1f99d41a2940bfdb66c5319db": "n",
+    "sha256:b7a56873cd771f2c446d369b649430b65a756ba278ff97ec81bb6f55b2e73569": "n",
+    "sha256:5f9c4ab08cac7457e9111a30e4664920607ea2c115a1433d7be98e97e64244ca": "n",
+    "sha256:670671cd97404156226e507973f2ab8330d3022ca96e0c93bdbdb320c41adcaf": "n",
+    "sha256:59e19706d51d39f66711c2653cd7eb1291c94d9b55eb14bda74ce4dc636d015a": "n",
+    "sha256:35135aaa6cc23891b40cb3f378c53a17a1127210ce60e125ccf03efcfdaec458": "n",
+    "sha256:624b60c58c9d8bfb6ff1886c2fd605d2adeb6ea4da576068201b6c6958ce93f4": "n",
+    "sha256:eb1e33e8a81b697b75855af6bfcdbcbf7cbbde9f94962ceaec1ed8af21f5a50f": "n",
+    "sha256:e29c9c180c6279b0b02abd6a1801c7c04082cf486ec027aa13515e4f3884bb6b": "n"
+  },
+  "direction": "input",
+  "pack": {
+    "id": "https://example.com/packs/vendor-intake",
+    "versions": ">=0.1.0"
+  },
+  "dialect": {
+    "path": "dialect.json",
+    "dialectVersion": 2,
+    "digest": "sha256:fa1e7dbc7ff03bbe841ecb4680d8d249da6c9b231203999434de4bc659d653e2"
+  },
+  "requires": {
+    "inputProfile": "sha256:2b5a5c82f8edf7b686cc50a68415a67c9032d324d9cf2d09f5477881bab04ddc"
+  },
+  "sourceKinds": [
+    "operation"
+  ],
+  "licence": "Apache-2.0",
+  "author": "example",
+  "assertion": "The author asserts that these rules derive these facts and this evidence-availability from records of that shape, or these arguments from that disposition, and asserts nothing about any record's truth.",
+  "fixtures": [
+    {
+      "name": "valid",
+      "path": "fixtures/valid",
+      "preparationDigest": "sha256:2a058ca1490ee316a87ad5999a7460906699a6f8987c93369a344ae4614b7a6d"
+    }
+  ],
+  "verification": []
+}
