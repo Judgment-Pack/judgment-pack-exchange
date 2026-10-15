@@ -1,0 +1,20 @@
+[
+  {
+    "id": "example.fx-metadata",
+    "kind": "dialect",
+    "path": "entries/example/fx-metadata",
+    "entryDigest": "sha256:bea1be434ae8422128a1c28e6ed5a32bb8dbb29574505fb52ed7f979c34664e0",
+    "dialectDigest": "sha256:d960dcd2423a07a478ee7defc4649072903141e99c39201466e58ec52d73efbe",
+    "fixtures": [
+      {
+        "name": "valid",
+        "files": [
+          "case.json",
+          "preparation.json",
+          "profiles.json",
+          "sources.json"
+        ]
+      }
+    ]
+  }
+]

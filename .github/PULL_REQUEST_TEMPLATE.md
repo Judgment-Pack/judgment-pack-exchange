@@ -5,13 +5,14 @@ One entry per pull request.
 
 ## System and pack
 
-The system the dialect speaks to, the pack (id and versions or digests) it was written against,
-and the direction (`input`, `output` or `both`).
+The entry's kind (`dialect` or `preset`), the system the dialect speaks to, the pack (id and
+versions or digests) it was written against (none for a preset), and the direction (`input`,
+`output` or `both`; `input` for a preset).
 
 ## Fixtures
 
 Where each fixture's recorded records come from, and what was removed from them. Fixtures are
-required: at least one for every entry.
+required for kind `dialect`: at least one for every such entry. A preset has none.
 
 ## Personal data and credentials
 
@@ -21,7 +22,8 @@ required: at least one for every entry.
 
 ## Checklist
 
-- [ ] `manifest.json` lists the entry, in `id` order, with both digests.
+- [ ] `manifest.json` lists the entry, in `id` order, with its `kind`, its `entryDigest`, the
+      digest of each document it holds (`dialectDigest`, `outputDigest`) and its fixtures' files.
 - [ ] `python -m unittest discover -s tests -v` passes with `.spec/` checked out.
 - [ ] The entry's `assertion` is the format's sentence, unchanged, and the README does not claim
       more: nothing about any record's truth.

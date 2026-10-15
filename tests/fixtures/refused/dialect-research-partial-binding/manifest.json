@@ -1,0 +1,20 @@
+[
+  {
+    "id": "example.research",
+    "kind": "dialect",
+    "path": "entries/example/research",
+    "entryDigest": "sha256:a6774ce539936278bddea19e10e0e21a51b769f401d3bd87038c421e939933cd",
+    "dialectDigest": "sha256:820d7b955fd930a6b45c32a265bb7fa7f40f328f86e8e20c9bc4c91c34d1949b",
+    "fixtures": [
+      {
+        "name": "valid",
+        "files": [
+          "binding.json",
+          "case.json",
+          "preparation.json",
+          "profiles.json"
+        ]
+      }
+    ]
+  }
+]

@@ -1,5 +1,6 @@
 {
-  "entryVersion": 1,
+  "entryVersion": 2,
+  "kind": "dialect",
   "id": "example.fx-metadata",
   "title": "Example: currency conversion with authoring metadata",
   "description": "Asks a gateway tool to convert an invoice's amount into the pack's currency, and copies the request fact and two evidence requirements from the case. An example of the authoring metadata: what the entry is for, the desk and runner releases its author says it fits, and a review note for an upgrade from the entry's previous bytes.",

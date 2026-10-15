@@ -1,8 +1,9 @@
 [
   {
     "id": "example.triage-write",
+    "kind": "dialect",
     "path": "entries/example/triage-write",
-    "entryDigest": "sha256:4535fe5f5ae27550d420a9931792a46eb4b6065a203c43eafe94218b3018fb20",
+    "entryDigest": "sha256:54434135eae3a0f1efd42f4de1a7537de34eaebff34cbb3c03362472c1b20cce",
     "outputDigest": "sha256:1a2f702352a28d6dcd5cf4eeb61fd8a11ed106ddc1c1a2ca3bc2811b3f766e81",
     "fixtures": []
   }

@@ -1,5 +1,6 @@
 {
-  "entryVersion": 1,
+  "entryVersion": 2,
+  "kind": "dialect",
   "id": "example.fx-convert",
   "title": "Example: currency conversion on an invoice",
   "direction": "input",

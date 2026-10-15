@@ -1,0 +1,31 @@
+{
+  "entryVersion": 2,
+  "kind": "dialect",
+  "id": "example.fx-unbound",
+  "title": "Example: a version-3 dialect with an unbound source",
+  "direction": "input",
+  "pack": {
+    "id": "https://example.com/packs/vendor-intake",
+    "versions": ">=0.1.0"
+  },
+  "dialect": {
+    "path": "dialect.json",
+    "dialectVersion": 3,
+    "digest": "sha256:90d1d4a2e1b49949d834dc594135cfd2f76c80e03de2c9922fea32ecb02cf0aa"
+  },
+  "requires": {},
+  "sourceKinds": [
+    "operation"
+  ],
+  "licence": "Apache-2.0",
+  "author": "example",
+  "assertion": "The author asserts that these rules derive these facts and this evidence-availability from records of that shape, or these arguments from that disposition, and asserts nothing about any record's truth.",
+  "fixtures": [
+    {
+      "name": "valid",
+      "path": "fixtures/valid",
+      "preparationDigest": "sha256:5c70a9d79398461e995c9784e3d01cb14fb81f54465b2af84040e89ff8be8b67"
+    }
+  ],
+  "verification": []
+}

@@ -1,5 +1,6 @@
 {
-  "entryVersion": 1,
+  "entryVersion": 2,
+  "kind": "dialect",
   "id": "example.triage-both",
   "title": "Example: an input dialect and its write-back",
   "direction": "both",

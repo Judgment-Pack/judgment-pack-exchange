@@ -10,9 +10,16 @@ system. Critical feedback and counterexamples are as valuable as new entries.
 - **Open an entry proposal first** (the issue template) when the dialect is for a system or a pack
   nobody has written one for, so the source kinds and the fixtures' origin can be settled before the
   work is done.
-- **Fixtures are required**, at least one per entry: the recorded source records as the Runner
-  retains them, and `preparation.json`, the exact canonical bytes the dialect must produce. The
-  tests run the specification's preparation verifier over each.
+- **Fixtures are required** for an entry of kind `dialect`, at least one: the recorded source
+  records as the Runner retains them, and `preparation.json`, the exact canonical bytes the dialect
+  must produce. The tests run the specification's preparation verifier over each. An entry of kind
+  `preset` has no pack and no fixtures: its directory holds exactly `entry.json`, `dialect.json`
+  (version 3, every bindable source unbound) and `README.md`, and it is checked by its document's
+  form, its digests and the scans only. Every `dialect.json`, of either kind, is held to its
+  document form by the catalog's own form checker.
+- **An `upgrade` note is keyed by a released entry's bytes**: the `entryDigest` of this entry's row
+  in an earlier release's manifest. The tests read the earlier releases from the repository's tags,
+  so a clone that has them (`git fetch --tags`) checks what CI checks.
 - **Say only what the format lets you say.** The entry's `assertion` is the format's sentence,
   unchanged; the README states what the dialect is for and nothing about the truth of any record.
 - **No credentials, tokens or personal data** in any file. Record fixtures from synthetic or
@@ -20,8 +27,9 @@ system. Critical feedback and counterexamples are as valuable as new entries.
   a maintainer must refuse credentials and personal data in every file before merge; the scan's
   silence proves nothing, so the check is yours first.
 
-The format is in [`docs/entry-format.md`](docs/entry-format.md); a worked example, which is not an
-entry, is in [`tests/fixtures/example-entry/`](tests/fixtures/example-entry/).
+The format is in [`docs/entry-format.md`](docs/entry-format.md); worked examples, which are not
+entries, are in [`tests/fixtures/example-entry/`](tests/fixtures/example-entry/) (kind `dialect`) and
+[`tests/fixtures/preset-entry/`](tests/fixtures/preset-entry/) (kind `preset`).
 
 ## Review
 
@@ -49,7 +57,8 @@ python -m unittest discover -s tests -v
 ```
 
 `.spec/` is ignored and never committed. Without it the preparation-verifier test is skipped, so a
-green run without it checks less than CI does.
+green run without it checks less than CI does. The catalog's own form checker
+(`tests/dialect_form.py`) needs no checkout: it runs on every `dialect.json` with or without `.spec/`.
 
 ## Developer Certificate of Origin
 

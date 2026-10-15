@@ -1,5 +1,6 @@
 {
-  "entryVersion": 1,
+  "entryVersion": 2,
+  "kind": "dialect",
   "id": "example.selected-file",
   "title": "Example: a selected file, a kind the verifier does not read",
   "direction": "input",
