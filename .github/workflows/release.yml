@@ -179,6 +179,10 @@ jobs:
       id-token: write
       attestations: write
       artifact-metadata: write
+    outputs:
+      # The draft this run made, by its id: the publish job reads and
+      # publishes that release, never whatever the tag names by then.
+      release-id: ${{ steps.draft.outputs.release-id }}
     steps:
       - name: Download the release's files
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -209,15 +213,19 @@ jobs:
             exit 1
           fi
 
-      # The organisation's attestation step, as the Runner, the gateway and the
-      # runtime pin it: actions/attest makes a build-provenance attestation of
-      # each file checksums.txt names.
-      - name: Attest the release's manifest
+      # The organisation's attestation action, as the Runner, the gateway and
+      # the runtime pin it, making a build-provenance attestation. Both files
+      # the release attaches are its subjects, each by its path;
+      # checksums.txt also names manifest.json's digest.
+      - name: Attest the release's files
         uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
-          subject-checksums: dist/checksums.txt
+          subject-path: |
+            dist/manifest.json
+            dist/checksums.txt
 
       - name: Create draft release
+        id: draft
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -229,6 +237,11 @@ jobs:
             --notes-file dist/release-notes.md \
             --title "exchange ${RELEASE_TAG}" \
             --verify-tag
+          # The one draft under the tag, which this job has just made (no
+          # release existed under it before).
+          release_id="$(gh api "repos/${GH_REPO}/releases" --paginate --jq '.[] | select(.tag_name == env.RELEASE_TAG and .draft) | .id')"
+          [[ "${release_id}" =~ ^[0-9]+$ ]] || { echo "Expected one draft release under ${RELEASE_TAG}; found: ${release_id:-none}" >&2; exit 1; }
+          echo "release-id=${release_id}" >> "${GITHUB_OUTPUT}"
 
   publish:
     name: Publish release
@@ -238,6 +251,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+    env:
+      RELEASE_ID: ${{ needs.attest-and-draft.outputs.release-id }}
     steps:
       - name: Require the tag to still name that commit
         shell: bash
@@ -252,53 +267,67 @@ jobs:
           name: release-dist
           path: run
 
+      # The run's own files, the bytes the draft must hold: checksums.txt in
+      # the one form this workflow writes it, naming manifest.json alone.
+      - name: Hold the run's files to their checksums
+        shell: bash
+        working-directory: run
+        run: |
+          if grep -q -v -E '^[0-9a-f]{64}  [A-Za-z0-9._-]+$' checksums.txt; then
+            echo "checksums.txt holds a line that is not a digest, two spaces and a plain name" >&2
+            exit 1
+          fi
+          [ "$(awk '{ print $2 }' checksums.txt)" = "manifest.json" ] || { echo "checksums.txt does not name manifest.json alone" >&2; exit 1; }
+          sha256sum --check --strict checksums.txt
+
       # A draft can be changed while it waits at the gate, by anyone who can
-      # write to the repository. Download it as it now stands and compare it
-      # with what this run wrote: the title the workflow gave it, the notes the
-      # commit holds, the same files by name, the same list of checksums, and
-      # every file the bytes that list names. A moment remains between this
-      # check and publishing; nothing here closes it.
-      - name: Require the draft to hold what this run wrote
+      # write to the repository. The release this run drafted is read through
+      # the API by its id, never downloaded: its state, title and notes, then
+      # the digest GitHub reports for each asset, compared with the run's
+      # files. The publish call follows that last read at once, by the same id.
+      # The moment between the two is the residual window docs/releasing.md
+      # states; the next step closes it after the fact.
+      - name: Require the draft to hold what this run wrote, and publish it
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
-          state="$(gh release view "${RELEASE_TAG}" --json isDraft --jq .isDraft)"
-          [ "${state}" = "true" ] || { echo "The release under ${RELEASE_TAG} is not a draft" >&2; exit 1; }
+          [[ "${RELEASE_ID}" =~ ^[0-9]+$ ]] || { echo "No release id from the draft job: ${RELEASE_ID:-none}" >&2; exit 1; }
+          written="$(cd run && for name in checksums.txt manifest.json; do printf '%s sha256:%s\n' "${name}" "$(sha256sum "${name}" | cut -d ' ' -f 1)"; done | LC_ALL=C sort)"
 
-          drafted_title="$(gh release view "${RELEASE_TAG}" --json name --jq .name)"
-          [ "${drafted_title}" = "exchange ${RELEASE_TAG}" ] || { echo "The draft is titled ${drafted_title}; the workflow titled it exchange ${RELEASE_TAG}" >&2; exit 1; }
+          state="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}" --jq '[.draft, .tag_name, .name] | @tsv')"
+          [ "${state}" = "$(printf 'true\t%s\texchange %s' "${RELEASE_TAG}" "${RELEASE_TAG}")" ] || { echo "Release ${RELEASE_ID} is not this run's draft of ${RELEASE_TAG}: ${state}" >&2; exit 1; }
           # Both are taken without the newlines they end in, which the two
           # ways of reading them do not agree on.
-          drafted_notes="$(gh release view "${RELEASE_TAG}" --json body --jq .body)"
+          drafted_notes="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}" --jq .body)"
           written_notes="$(cat run/release-notes.md)"
           [ "${drafted_notes}" = "${written_notes}" ] || { echo "The draft's notes are not the notes the commit holds:" >&2; diff <(echo "${written_notes}") <(echo "${drafted_notes}") >&2; exit 1; }
 
-          mkdir draft
-          gh release download "${RELEASE_TAG}" --dir draft
-
-          written="$(cd run && find . -type f ! -name release-notes.md | LC_ALL=C sort)"
-          drafted="$(cd draft && find . -type f | LC_ALL=C sort)"
-          [ "${written}" = "${drafted}" ] || { echo "The draft does not hold the files this run wrote:" >&2; diff <(echo "${written}") <(echo "${drafted}") >&2; exit 1; }
-
-          cmp run/checksums.txt draft/checksums.txt
-          # The list is read in the one form this workflow writes it: a digest,
-          # two spaces, and a name of plain characters. Any other line is
-          # refused, though a checksum program would read it.
-          if grep -q -v -E '^[0-9a-f]{64}  [A-Za-z0-9._-]+$' draft/checksums.txt; then
-            echo "checksums.txt holds a line that is not a digest, two spaces and a plain name" >&2
+          drafted="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}/assets" --paginate --jq '.[] | "\(.name) \(.digest)"' | LC_ALL=C sort)"
+          if [ "${drafted}" != "${written}" ]; then
+            printf 'The draft does not hold what this run wrote.\nThis run wrote:\n%s\nThe draft holds:\n%s\n' "${written}" "${drafted}" >&2
             exit 1
           fi
-          named="$(awk '{ print "./" $2 }' draft/checksums.txt | LC_ALL=C sort)"
-          files="$(cd draft && find . -type f ! -name checksums.txt | LC_ALL=C sort)"
-          [ "${named}" = "${files}" ] || { echo "checksums.txt does not name the draft's files, each once:" >&2; diff <(echo "${named}") <(echo "${files}") >&2; exit 1; }
-          (cd draft && sha256sum --check --strict checksums.txt)
+          gh api -X PATCH "repos/${GH_REPO}/releases/${RELEASE_ID}" -F draft=false -f make_latest=true --silent
 
-      # The grammar has no prerelease, so every release is marked latest.
-      - name: Publish the reviewed draft release
+      # Published, the release is immutable once the repository's release
+      # immutability is on (docs/releasing.md). Its assets are read once more:
+      # a file replaced in the window is published only as a release this job
+      # fails, by name, with both digest sets.
+      - name: Require the published release to hold what this run wrote
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: gh release edit "${RELEASE_TAG}" --draft=false --latest
+        run: |
+          written="$(cd run && for name in checksums.txt manifest.json; do printf '%s sha256:%s\n' "${name}" "$(sha256sum "${name}" | cut -d ' ' -f 1)"; done | LC_ALL=C sort)"
+          draft="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}" --jq .draft)"
+          published="$(gh api "repos/${GH_REPO}/releases/${RELEASE_ID}/assets" --paginate --jq '.[] | "\(.name) \(.digest)"' | LC_ALL=C sort)"
+          if [ "${draft}" != "false" ] || [ "${published}" != "${written}" ]; then
+            printf 'The published release %s (release %s, draft: %s) does not hold what this run wrote.\nThis run wrote:\n%s\nThe release holds:\n%s\n' \
+              "${RELEASE_TAG}" "${RELEASE_ID}" "${draft}" "${written}" "${published}" >&2
+            exit 1
+          fi
+          echo "Published ${RELEASE_TAG} (release ${RELEASE_ID}):"
+          echo "${published}"

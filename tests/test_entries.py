@@ -11,6 +11,7 @@ import datetime
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -51,6 +52,13 @@ MAX_MANIFEST_ROWS = 1024
 FIXTURE_FILES = {"case.json", "profiles.json", "preparation.json"}
 FIXTURE_FILES_OPTIONAL = {"sources.json", "binding.json"}
 BINDING = "binding.json"
+# RFC 0018 §12: a binding document is at most 65,536 bytes.
+MAX_BINDING_BYTES = 65536
+# A reader's locator, `<repository>/<path>@<commit>` (RFC 0019 §3), read as `<owner>/<name>/<path>@<commit>`
+# until the RFC gives its grammar (judgment-pack-spec#166, item 5).
+OWNER_OR_NAME = re.compile(r"[A-Za-z0-9_.-]{1,100}")
+COMMIT = re.compile(r"[0-9a-f]{7,40}")
+READER = "Judgment-Pack/judgment-pack-spec/tools/dialect_verify.py@f821757fcaf5cb9831dbcb1f8b386a5ead793e4a"
 ABSOLUTE_URI = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:[^\s]+")
 SKIPPED_DIRS = {".git", ".spec", ".venv", "node_modules", "__pycache__"}
 
@@ -87,11 +95,13 @@ def load_strict(data: bytes):
 
 
 def read_manifest(path: Path):
-    """The manifest, read within its bound (RFC 0019 §3): over 1 MiB is refused before it is parsed."""
+    """The manifest, read within its bound (RFC 0019 §3). The open file's size is taken first; a file over
+    1 MiB is refused before any byte is read or parsed, and otherwise exactly its size is read."""
     with path.open("rb") as handle:
-        data = handle.read(MAX_MANIFEST_BYTES + 1)
-    if len(data) > MAX_MANIFEST_BYTES:
-        raise ValueError("over 1 MiB (1,048,576 bytes)")
+        size = os.fstat(handle.fileno()).st_size
+        if size > MAX_MANIFEST_BYTES:
+            raise ValueError(f"{size} bytes, over 1 MiB (1,048,576 bytes)")
+        data = handle.read(size)
     return load_strict(data)
 
 
@@ -194,8 +204,8 @@ def fixture_list_problems(fixtures, where: str) -> list[str]:
             continue
         if not 3 <= len(files) <= 5:
             problems.append(f"{at}: files lists {len(files)} names, not 3 to 5")
-        if len(set(files)) != len(files):
-            problems.append(f"{at}: files names a file twice")
+        for name in sorted({f for f in files if files.count(f) > 1}):
+            problems.append(f"{at}: files names {name} twice")
         for name in sorted(FIXTURE_FILES - set(files)):
             problems.append(f"{at}: files lacks {name}")
         for name in sorted(set(files) - FIXTURE_FILES - FIXTURE_FILES_OPTIONAL):
@@ -226,24 +236,74 @@ def tag_order(tag: str) -> tuple[int, int, int]:
     return int(major), int(minor), int(patch)
 
 
-def compatibility_ok(v) -> bool:
+def length_problem(where: str, v, low: int, high: int) -> str | None:
+    """The bound a string fails, named: not a string, empty, or over its maximum by its count."""
+    if not isinstance(v, str):
+        return f"{where} is not a string"
+    if len(v) < low:
+        return f"{where} is empty" if low == 1 else f"{where} is {len(v)} characters, under {low}"
+    if len(v) > high:
+        return f"{where} is {len(v)} characters, over {high}"
+    return None
+
+
+def compatibility_problem(where: str, v) -> str | None:
     """A compatibility value (RFC 0019 §3): 1 to 64 characters, one release tag, or `>=<lower> <<upper>`
     with exactly one space and the upper tag above the lower by their integers. No other range syntax."""
-    if not text_ok(v, 1, 64):
-        return False
+    bound = length_problem(where, v, 1, 64)
+    if bound:
+        return bound
     if release_tag_ok(v):
-        return True
+        return None
     match = COMPATIBILITY_RANGE.fullmatch(v)
-    return match is not None and tag_order(match.group(2)) > tag_order(match.group(1))
+    if match is None:
+        return f"{where} {v!r} is not a release tag or a range of release tags"
+    if not tag_order(match.group(2)) > tag_order(match.group(1)):
+        return f"{where} {v!r} has an upper tag not above its lower tag"
+    return None
+
+
+def compatibility_ok(v) -> bool:
+    return compatibility_problem("value", v) is None
+
+
+def reader_problems(where: str, v) -> list[str]:
+    """A verification record's reader, `<owner>/<name>/<path>@<commit>` (the catalog's reading of RFC 0019
+    §3's `<repository>/<path>@<commit>`): owner and name 1 to 100 of [A-Za-z0-9_.-], a path with no empty
+    and no `..` segment, a commit of 7 to 40 lower-case hexadecimal digits; at most 200 characters."""
+    bound = length_problem(where, v, 1, 200)
+    if bound:
+        return [bound]
+    locator, at, commit = v.rpartition("@")
+    if not at:
+        return [f"{where} {v!r} has no @<commit>"]
+    problems = []
+    if not COMMIT.fullmatch(commit):
+        problems.append(f"{where}'s commit {commit!r} is not 7 to 40 lower-case hexadecimal digits")
+    parts = locator.split("/", 2)
+    if len(parts) < 2 or not all(OWNER_OR_NAME.fullmatch(p) for p in parts[:2]):
+        problems.append(f"{where} {v!r} does not begin <owner>/<name>/, each 1 to 100 of [A-Za-z0-9_.-]")
+    elif len(parts) < 3 or parts[2] == "":
+        problems.append(f"{where} {v!r} has no path")
+    elif any(segment in ("", "..") for segment in parts[2].split("/")):
+        problems.append(f"{where} {v!r} has an empty or '..' path segment")
+    return problems
+
+
+def unbound_source_names(document) -> set[str]:
+    """RFC 0018 §4.4: an `operation` source naming no `profile` and no `profileDigest` is unbound."""
+    sources = document.get("sources") if isinstance(document, dict) else None
+    if not isinstance(sources, list):
+        return set()
+    return {
+        s.get("name") for s in sources
+        if isinstance(s, dict) and s.get("kind") == "operation" and not ({"profile", "profileDigest"} & s.keys())
+        and isinstance(s.get("name"), str)
+    }
 
 
 def has_unbound_source(document) -> bool:
-    """RFC 0018 §4.4: an `operation` source naming no `profile` and no `profileDigest` is unbound."""
-    sources = document.get("sources") if isinstance(document, dict) else None
-    return isinstance(sources, list) and any(
-        isinstance(s, dict) and s.get("kind") == "operation" and not ({"profile", "profileDigest"} & s.keys())
-        for s in sources
-    )
+    return bool(unbound_source_names(document))
 
 
 def date_ok(v) -> bool:
@@ -282,27 +342,36 @@ def entry_problems(entry, directory_id: str, document_version=None, output_docum
     if entry["assertion"] != ASSERTION:
         problems.append("entry: assertion is not the format's sentence")
 
-    # The authoring metadata (RFC 0019 §3): optional, and held to its bounds when present.
-    if "description" in entry and not text_ok(entry["description"], 1, 4096):
-        problems.append("entry: description is not a string of 1 to 4096 characters")
+    # The authoring metadata (RFC 0019 §3): optional, and held to its bounds when present. Each
+    # diagnostic names the bound it failed.
+    if "description" in entry:
+        bound = length_problem("entry: description", entry["description"], 1, 4096)
+        if bound:
+            problems.append(bound)
     if "compatibility" in entry:
         compatibility = entry["compatibility"]
         bad = closed(compatibility, {"desk", "runner"}, set(), "compatibility")
         problems += bad
         if not bad:
             for name in ("desk", "runner"):
-                if not compatibility_ok(compatibility[name]):
-                    problems.append(f"compatibility: {name} is not a release tag or a range of release tags of 1 to 64 characters")
+                bound = compatibility_problem(f"compatibility: {name}", compatibility[name])
+                if bound:
+                    problems.append(bound)
     if "upgrade" in entry:
         upgrade = entry["upgrade"]
-        if not (isinstance(upgrade, dict) and 1 <= len(upgrade) <= 32):
-            problems.append("upgrade: not an object of 1 to 32 members")
+        if not isinstance(upgrade, dict):
+            problems.append("upgrade: not an object")
+        elif not upgrade:
+            problems.append("upgrade has no members")
+        elif len(upgrade) > 32:
+            problems.append(f"upgrade has {len(upgrade)} members, over 32")
         else:
             for key, note in upgrade.items():
                 if not digest_ok(key):
                     problems.append(f"upgrade: the key {key!r} is not a sha256 digest")
-                if not text_ok(note, 1, 2048):
-                    problems.append(f"upgrade: the note for {key!r} is not a string of 1 to 2048 characters")
+                bound = length_problem(f"upgrade: the note for {key!r}", note, 1, 2048)
+                if bound:
+                    problems.append(bound)
 
     pack = entry["pack"]
     if isinstance(pack, dict):
@@ -434,13 +503,13 @@ def entry_problems(entry, directory_id: str, document_version=None, output_docum
                 problems.append(f"{where}: date is not YYYY-MM-DD")
             for name in ("runner", "runtime"):
                 if not release_tag_ok(v[name]):
-                    problems.append(f"{where}: {name} is not a release tag (vMAJOR.MINOR.PATCH, ASCII, no leading zeroes)")
-            if not (
-                isinstance(v["readers"], list)
-                and 1 <= len(v["readers"]) <= 8
-                and all(text_ok(r, 1, 200) for r in v["readers"])
-            ):
-                problems.append(f"{where}: readers is not an array of 1 to 8 strings of 1 to 200 characters")
+                    problems.append(f"{where}: {name} {v[name]!r} is not a release tag (vMAJOR.MINOR.PATCH, ASCII, no leading zeroes)")
+            readers = v["readers"]
+            if not (isinstance(readers, list) and 1 <= len(readers) <= 8):
+                problems.append(f"{where}: readers is not an array of 1 to 8")
+            else:
+                for k, reader in enumerate(readers):
+                    problems += reader_problems(f"{where}: readers[{k}]", reader)
             if v["result"] != "agree":
                 problems.append(f"{where}: result is not agree")
     else:
@@ -620,9 +689,15 @@ def directory_problems(directory: Path, path: str, row: dict) -> list[str]:
 def fixture_set_problems(directory: Path, path: str, entry: dict, row: dict, dialect_document) -> list[str]:
     """Each fixture directory against its row's file list and the closed set (RFC 0019 §3)."""
     listed = row.get("fixtures")
+    if not isinstance(listed, list):
+        return []  # the manifest's form refuses the row (manifest_problems)
     names = [fixture["name"] for fixture in entry["fixtures"]]
-    if not (isinstance(listed, list) and [f.get("name") if isinstance(f, dict) else None for f in listed] == names):
-        return [f"{path}: the manifest's fixtures do not name the entry's fixtures, in its order"]
+    listed_names = [f.get("name") if isinstance(f, dict) else None for f in listed]
+    if listed_names != names:
+        return [
+            f"{path}: the manifest's fixtures are {', '.join(map(str, listed_names)) or 'none'}, "
+            f"not entry.json's {', '.join(names) or 'none'} in its order"
+        ]
     problems = []
     unbound = has_unbound_source(dialect_document)
     for fixture, listing in zip(entry["fixtures"], listed):
@@ -647,6 +722,48 @@ def fixture_set_problems(directory: Path, path: str, entry: dict, row: dict, dia
             problems.append(f"{where}: binding.json is required: the dialect has an unbound source")
         if BINDING in files and not unbound:
             problems.append(f"{where}: binding.json is refused: the dialect has no unbound source")
+        if (held / BINDING).is_file() and not (held / BINDING).is_symlink():
+            problems += binding_problems(f"{where}: binding.json", held / BINDING, entry, dialect_document)
+    return problems
+
+
+def binding_problems(where: str, path: Path, entry: dict, dialect_document) -> list[str]:
+    """A fixture's binding document, held by the catalog itself and not only by a replay: its byte bound
+    (RFC 0018 §12, 65,536 bytes inclusive) always, read no further when over it; and, for a dialect with
+    an unbound source, its form (RFC 0018 §4.4): a closed object of `dialect`, the entry's dialect digest,
+    and `sources`, naming each unbound source of the dialect and no other name, each a closed
+    `{profile, profileDigest}`."""
+    size = path.stat().st_size
+    if size > MAX_BINDING_BYTES:
+        return [f"{where} is {size} bytes, over 65,536"]
+    unbound = unbound_source_names(dialect_document)
+    if not unbound:
+        return []
+    try:
+        binding = load_strict(path.read_bytes())
+    except ValueError as error:
+        return [f"{where}: {error}"]
+    problems = closed(binding, {"dialect", "sources"}, set(), where)
+    if problems:
+        return problems
+    if not (digest_ok(binding["dialect"]) and binding["dialect"] == entry["dialect"]["digest"]):
+        problems.append(f"{where}: dialect is not the entry's dialect digest")
+    sources = binding["sources"]
+    if not isinstance(sources, dict):
+        return problems + [f"{where}: sources is not an object"]
+    for name, value in sources.items():
+        if name not in unbound:
+            problems.append(f"{where}: sources names {name!r}, which is not an unbound source of the dialect")
+        bad = closed(value, {"profile", "profileDigest"}, set(), f"{where}: sources.{name}")
+        problems += bad
+        if bad:
+            continue
+        if not is_str(value["profile"]):
+            problems.append(f"{where}: sources.{name}: profile is not a non-empty string")
+        if not digest_ok(value["profileDigest"]):
+            problems.append(f"{where}: sources.{name}: profileDigest is not a sha256 digest")
+    for name in sorted(unbound - sources.keys()):
+        problems.append(f"{where}: sources does not name the unbound source {name!r}")
     return problems
 
 
@@ -844,7 +961,7 @@ class ExampleEntry(unittest.TestCase):
         self.assertEqual(entry_problems(entry, ident, 2), [])
         d = "sha256:" + "a" * 64
         fx = entry["fixtures"][0]
-        ver = {"date": "2026-10-14", "runner": "v0.9.0", "runtime": "v0.32.0", "readers": ["r"], "result": "agree"}
+        ver = {"date": "2026-10-14", "runner": "v0.9.0", "runtime": "v0.32.0", "readers": [READER], "result": "agree"}
 
         def with_(**changes):
             return {**entry, **changes}
@@ -909,7 +1026,8 @@ class ExampleEntry(unittest.TestCase):
             "verification runner leading zero": with_(verification=[{**ver, "runner": "v0.09.0"}]),
             "verification runtime non-ASCII digit": with_(verification=[{**ver, "runtime": "v0.\u0663.0"}]),
             "verification readers empty": with_(verification=[{**ver, "readers": []}]),
-            "verification readers 9": with_(verification=[{**ver, "readers": ["r"] * 9}]),
+            "verification readers 9": with_(verification=[{**ver, "readers": [READER] * 9}]),
+            "verification reader not a locator": with_(verification=[{**ver, "readers": ["r"]}]),
             "verification reader 201": with_(verification=[{**ver, "readers": ["r" * 201]}]),
             "verification result": with_(verification=[{**ver, "result": "disagree"}]),
             "member missing": {k: v for k, v in entry.items() if k != "title"},
@@ -1393,6 +1511,55 @@ class ManifestForm(unittest.TestCase):
         more = sorted(rows + [{**row, "id": "example.row-9999", "path": "entries/example/row-9999"}], key=lambda r: r["id"].encode("utf-8"))
         self.assertEqual(manifest_problems(more), ["manifest: 1025 rows, more than 1,024"])
 
+    def test_the_manifest_is_read_within_its_bound(self):
+        """Its size first: nothing read or parsed past 1 MiB, and exactly its size read at the bound."""
+        import tempfile
+        from unittest import mock
+
+        module = sys.modules[__name__]
+        real_open = Path.open
+        reads: list[int] = []
+
+        class Counted:
+            def __init__(self, handle):
+                self.handle = handle
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                self.handle.close()
+
+            def fileno(self):
+                return self.handle.fileno()
+
+            def read(self, *args):
+                data = self.handle.read(*args)
+                reads.append(len(data))
+                return data
+
+        def counted_open(self, *args, **kwargs):
+            return Counted(real_open(self, *args, **kwargs))
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "manifest.json"
+            for size, admitted in ((1024 * 1024, True), (1024 * 1024 + 1, False)):
+                with self.subTest(size):
+                    path.write_bytes(b"[" + b" " * (size - 3) + b"]\n")
+                    reads.clear()
+                    with mock.patch.object(Path, "open", counted_open), \
+                            mock.patch.object(module, "load_strict", wraps=load_strict) as parse:
+                        if admitted:
+                            try:
+                                self.assertEqual(read_manifest(path), [])
+                            except ValueError as error:
+                                self.fail(f"a manifest of exactly 1 MiB is refused: {error}")
+                        else:
+                            with self.assertRaises(ValueError):
+                                read_manifest(path)
+                    self.assertEqual(sum(reads), size if admitted else 0)
+                    self.assertEqual(parse.call_count, 1 if admitted else 0)
+
     def test_the_byte_bound_is_one_mib(self):
         import tempfile
 
@@ -1419,70 +1586,548 @@ class ManifestForm(unittest.TestCase):
         self.assertTrue(manifest_problems([at("example.a.b"), at("example.a-b")]))
 
 
-# One refused tree per bound, each a passing example (metadata-entry, or unbound-entry for the last of
-# the binding rules) with one change; its README says which. The reason is the problem the tree must
-# produce, so a tree refused for another reason does not pass.
-REFUSALS = {
-    'compatibility-desk-65-characters': 'compatibility: desk is not a release tag or a range',
-    'compatibility-desk-empty': 'compatibility: desk is not a release tag or a range',
-    'compatibility-desk-lower-bound-only': 'compatibility: desk is not a release tag or a range',
-    'compatibility-not-an-object': 'compatibility: not an object',
-    'compatibility-runner-leading-zero': 'compatibility: runner is not a release tag or a range',
-    'compatibility-runner-non-ascii-digit': 'compatibility: runner is not a release tag or a range',
-    'compatibility-runner-two-spaces': 'compatibility: runner is not a release tag or a range',
-    'compatibility-runner-upper-below-lower-by-integers': 'compatibility: runner is not a release tag or a range',
-    'compatibility-runner-upper-not-above-lower': 'compatibility: runner is not a release tag or a range',
-    'compatibility-with-another-member': 'compatibility: unknown member gateway',
-    'compatibility-without-runner': 'compatibility: missing runner',
-    'description-4097-characters': 'entry: description is not a string of 1 to 4096 characters',
-    'description-empty': 'entry: description is not a string of 1 to 4096 characters',
-    'fixture-binding-without-unbound-source': 'fixtures/valid: binding.json is refused: the dialect has no unbound source',
-    'fixture-file-not-listed': "fixtures/valid holds notes.json, which the manifest's file list does not name",
-    'fixture-holds-a-directory': 'fixtures/valid holds extra, which is not a file',
-    'fixture-listed-file-missing': "fixtures/valid has no sources.json, which the manifest's file list names",
-    'fixture-unbound-source-without-binding': 'fixtures/valid: binding.json is required: the dialect has an unbound source',
-    'manifest-1025-rows': 'manifest: 1025 rows, more than 1,024',
-    'manifest-digest-malformed': 'manifest[0]: entryDigest is not a sha256 digest',
-    'manifest-entry-id-differs': "entry: id example.fx-other is not its path's example.fx-metadata",
-    'manifest-entry-unlisted': 'entries/example/fx-unlisted: an entry the manifest does not list',
-    'manifest-files-name-twice': 'manifest[0].fixtures[0]: files names a file twice',
-    'manifest-files-six-names': 'manifest[0].fixtures[0]: files lists 6 names, not 3 to 5',
-    'manifest-files-two-names': 'manifest[0].fixtures[0]: files lists 2 names, not 3 to 5',
-    'manifest-files-unknown-name': 'manifest[0].fixtures[0]: files names notes.json, which no fixture holds',
-    'manifest-files-without-case': 'manifest[0].fixtures[0]: files lacks case.json',
-    'manifest-fixture-with-another-member': 'manifest[0].fixtures[0]: unknown member preparationDigest',
-    'manifest-fixtures-out-of-order': "the manifest's fixtures do not name the entry's fixtures, in its order",
-    'manifest-id-malformed': 'manifest[0]: id is not of the entry id form',
-    'manifest-id-twice': 'manifest: an id is listed twice',
-    'manifest-out-of-byte-order': 'manifest: not in id byte order',
-    'manifest-over-1-mib': 'manifest.json: over 1 MiB (1,048,576 bytes)',
-    'manifest-path-not-split-at-first-dot': 'manifest[0]: path is not entries/example/fx.metadata, the path its id names',
-    'manifest-path-trailing-slash': 'manifest[0]: path is not entries/example/fx-metadata, the path its id names',
-    'manifest-row-member-twice': 'manifest.json: a member name is given twice',
-    'manifest-row-with-another-member': 'manifest[0]: unknown member title',
-    'manifest-row-without-entry': 'entries/example/fx-missing: listed in the manifest, no such entry',
-    'manifest-row-without-fixtures': 'manifest[0]: missing fixtures',
-    'upgrade-33-members': 'upgrade: not an object of 1 to 32 members',
-    'upgrade-empty': 'upgrade: not an object of 1 to 32 members',
-    'upgrade-key-not-a-digest': "upgrade: the key 'v0.1.0' is not a sha256 digest",
-    'upgrade-note-2049-characters': "upgrade: the note for 'sha256:52895deee7e135c99f48553cfcd01586aafcfea29232c03698aac6bec1ca6c31' is not a string of 1 to 2048 characters",
-    'upgrade-note-empty': "upgrade: the note for 'sha256:52895deee7e135c99f48553cfcd01586aafcfea29232c03698aac6bec1ca6c31' is not a string of 1 to 2048 characters",
-    'verification-runner-leading-zero': 'verification[0]: runner is not a release tag',
-    'verification-runtime-prerelease': 'verification[0]: runtime is not a release tag',
+# One refused tree per bound under tests/fixtures/refused/, each a passing example (its base) with one
+# change; its README says which. For each tree: its base, the steps that revert its one change (a
+# top-level member of entry.json restored from the base, the manifest's digests then following the
+# bytes; or a path restored from the base, or removed where the base has none), and the complete set of
+# problems the tree must produce.
+REFUSED_TREES = {
+    'binding-65537-bytes': (
+        'unbound-entry',
+        [('path', 'entries/example/fx-unbound/fixtures/valid/binding.json')],
+        [
+            'entries/example/fx-unbound: fixtures/valid: binding.json is 65537 bytes, over 65,536',
+        ],
+    ),
+    'binding-names-an-unknown-source': (
+        'unbound-entry',
+        [('path', 'entries/example/fx-unbound/fixtures/valid/binding.json')],
+        [
+            "entries/example/fx-unbound: fixtures/valid: binding.json: sources names 'rates', which is not an unbound source of the dialect",
+        ],
+    ),
+    'binding-with-another-member': (
+        'unbound-entry',
+        [('path', 'entries/example/fx-unbound/fixtures/valid/binding.json')],
+        [
+            'entries/example/fx-unbound: fixtures/valid: binding.json: unknown member note',
+        ],
+    ),
+    'binding-without-its-source': (
+        'unbound-entry',
+        [('path', 'entries/example/fx-unbound/fixtures/valid/binding.json')],
+        [
+            "entries/example/fx-unbound: fixtures/valid: binding.json: sources does not name the unbound source 'fx'",
+        ],
+    ),
+    'compatibility-desk-65-characters': (
+        'metadata-entry',
+        [('member', 'compatibility')],
+        [
+            'entries/example/fx-metadata: compatibility: desk is 65 characters, over 64',
+        ],
+    ),
+    'compatibility-desk-empty': (
+        'metadata-entry',
+        [('member', 'compatibility')],
+        [
+            'entries/example/fx-metadata: compatibility: desk is empty',
+        ],
+    ),
+    'compatibility-desk-lower-bound-only': (
+        'metadata-entry',
+        [('member', 'compatibility')],
+        [
+            "entries/example/fx-metadata: compatibility: desk '>=v0.14.0' is not a release tag or a range of release tags",
+        ],
+    ),
+    'compatibility-not-an-object': (
+        'metadata-entry',
+        [('member', 'compatibility')],
+        [
+            'entries/example/fx-metadata: compatibility: not an object',
+        ],
+    ),
+    'compatibility-runner-leading-zero': (
+        'metadata-entry',
+        [('member', 'compatibility')],
+        [
+            "entries/example/fx-metadata: compatibility: runner 'v0.011.0' is not a release tag or a range of release tags",
+        ],
+    ),
+    'compatibility-runner-non-ascii-digit': (
+        'metadata-entry',
+        [('member', 'compatibility')],
+        [
+            "entries/example/fx-metadata: compatibility: runner 'v١.0.0' is not a release tag or a range of release tags",
+        ],
+    ),
+    'compatibility-runner-two-spaces': (
+        'metadata-entry',
+        [('member', 'compatibility')],
+        [
+            "entries/example/fx-metadata: compatibility: runner '>=v0.11.0  <v0.12.0' is not a release tag or a range of release tags",
+        ],
+    ),
+    'compatibility-runner-upper-below-lower-by-integers': (
+        'metadata-entry',
+        [('member', 'compatibility')],
+        [
+            "entries/example/fx-metadata: compatibility: runner '>=v0.10.0 <v0.9.0' has an upper tag not above its lower tag",
+        ],
+    ),
+    'compatibility-runner-upper-not-above-lower': (
+        'metadata-entry',
+        [('member', 'compatibility')],
+        [
+            "entries/example/fx-metadata: compatibility: runner '>=v0.11.0 <v0.11.0' has an upper tag not above its lower tag",
+        ],
+    ),
+    'compatibility-with-another-member': (
+        'metadata-entry',
+        [('member', 'compatibility')],
+        [
+            'entries/example/fx-metadata: compatibility: unknown member gateway',
+        ],
+    ),
+    'compatibility-without-runner': (
+        'metadata-entry',
+        [('member', 'compatibility')],
+        [
+            'entries/example/fx-metadata: compatibility: missing runner',
+        ],
+    ),
+    'description-4097-characters': (
+        'metadata-entry',
+        [('member', 'description')],
+        [
+            'entries/example/fx-metadata: entry: description is 4097 characters, over 4096',
+        ],
+    ),
+    'description-empty': (
+        'metadata-entry',
+        [('member', 'description')],
+        [
+            'entries/example/fx-metadata: entry: description is empty',
+        ],
+    ),
+    'fixture-binding-without-unbound-source': (
+        'metadata-entry',
+        [('path', 'entries/example/fx-metadata/fixtures/valid/binding.json'), ('path', 'manifest.json')],
+        [
+            'entries/example/fx-metadata: fixtures/valid: binding.json is refused: the dialect has no unbound source',
+        ],
+    ),
+    'fixture-file-not-listed': (
+        'metadata-entry',
+        [('path', 'entries/example/fx-metadata/fixtures/valid/notes.json')],
+        [
+            "entries/example/fx-metadata: fixtures/valid holds notes.json, which the manifest's file list does not name",
+        ],
+    ),
+    'fixture-holds-a-directory': (
+        'metadata-entry',
+        [('path', 'entries/example/fx-metadata/fixtures/valid/extra')],
+        [
+            'entries/example/fx-metadata: fixtures/valid holds extra, which is not a file',
+            "entries/example/fx-metadata: fixtures/valid holds extra, which the manifest's file list does not name",
+        ],
+    ),
+    'fixture-listed-file-missing': (
+        'metadata-entry',
+        [('path', 'entries/example/fx-metadata/fixtures/valid/sources.json')],
+        [
+            "entries/example/fx-metadata: fixtures/valid has no sources.json, which the manifest's file list names",
+        ],
+    ),
+    'fixture-unbound-source-without-binding': (
+        'unbound-entry',
+        [('path', 'entries/example/fx-unbound/fixtures/valid/binding.json'), ('path', 'manifest.json')],
+        [
+            'entries/example/fx-unbound: fixtures/valid: binding.json is required: the dialect has an unbound source',
+        ],
+    ),
+    'manifest-1025-rows': (
+        'metadata-entry',
+        [('path', 'manifest.json')],
+        [
+            'manifest: 1025 rows, more than 1,024',
+        ],
+    ),
+    'manifest-digest-malformed': (
+        'metadata-entry',
+        [('path', 'manifest.json')],
+        [
+            "entries/example/fx-metadata: entry.json does not match the manifest's entryDigest",
+            'manifest[0]: entryDigest is not a sha256 digest',
+        ],
+    ),
+    'manifest-entry-id-differs': (
+        'metadata-entry',
+        [('member', 'id')],
+        [
+            "entries/example/fx-metadata: entry: id example.fx-other is not its path's example.fx-metadata",
+        ],
+    ),
+    'manifest-entry-unlisted': (
+        'metadata-entry',
+        [('path', 'entries/example/fx-unlisted')],
+        [
+            'entries/example/fx-unlisted: an entry the manifest does not list',
+        ],
+    ),
+    'manifest-files-name-twice': (
+        'metadata-entry',
+        [('path', 'manifest.json')],
+        [
+            'manifest[0].fixtures[0]: files names profiles.json twice',
+        ],
+    ),
+    'manifest-files-six-names': (
+        'metadata-entry',
+        [('path', 'manifest.json')],
+        [
+            'manifest[0].fixtures[0]: files lists 6 names, not 3 to 5',
+            'manifest[0].fixtures[0]: files names case.json twice',
+            'manifest[0].fixtures[0]: files names sources.json twice',
+        ],
+    ),
+    'manifest-files-two-names': (
+        'metadata-entry',
+        [('path', 'entries/example/fx-metadata/fixtures/valid/profiles.json'), ('path', 'entries/example/fx-metadata/fixtures/valid/sources.json'), ('path', 'manifest.json')],
+        [
+            'manifest[0].fixtures[0]: files lacks profiles.json',
+            'manifest[0].fixtures[0]: files lists 2 names, not 3 to 5',
+        ],
+    ),
+    'manifest-files-unknown-name': (
+        'metadata-entry',
+        [('path', 'entries/example/fx-metadata/fixtures/valid/notes.json'), ('path', 'manifest.json')],
+        [
+            'manifest[0].fixtures[0]: files names notes.json, which no fixture holds',
+        ],
+    ),
+    'manifest-files-without-case': (
+        'metadata-entry',
+        [('path', 'entries/example/fx-metadata/fixtures/valid/case.json'), ('path', 'manifest.json')],
+        [
+            'manifest[0].fixtures[0]: files lacks case.json',
+        ],
+    ),
+    'manifest-fixture-with-another-member': (
+        'metadata-entry',
+        [('path', 'manifest.json')],
+        [
+            'manifest[0].fixtures[0]: unknown member preparationDigest',
+        ],
+    ),
+    'manifest-fixtures-out-of-order': (
+        'metadata-entry',
+        [('path', 'entries/example/fx-metadata/fixtures/again'), ('member', 'fixtures'), ('path', 'manifest.json')],
+        [
+            "entries/example/fx-metadata: the manifest's fixtures are again, valid, not entry.json's valid, again in its order",
+        ],
+    ),
+    'manifest-id-malformed': (
+        'metadata-entry',
+        [('path', 'manifest.json')],
+        [
+            'entries/example/fx-metadata: manifest id Example.fx-metadata is not example.fx-metadata',
+            'manifest[0]: id is not of the entry id form',
+        ],
+    ),
+    'manifest-id-twice': (
+        'metadata-entry',
+        [('path', 'manifest.json')],
+        [
+            'manifest: an id is listed twice',
+        ],
+    ),
+    'manifest-out-of-byte-order': (
+        'metadata-entry',
+        [('path', 'entries/example/a-first'), ('path', 'manifest.json')],
+        [
+            'manifest: not in id byte order',
+        ],
+    ),
+    'manifest-over-1-mib': (
+        'metadata-entry',
+        [('path', 'manifest.json')],
+        [
+            'manifest.json: 1048577 bytes, over 1 MiB (1,048,576 bytes)',
+        ],
+    ),
+    'manifest-path-not-split-at-first-dot': (
+        'metadata-entry',
+        [('path', 'entries/example.fx'), ('path', 'entries/example'), ('path', 'manifest.json')],
+        [
+            'manifest[0]: path is not entries/example/fx.metadata, the path its id names',
+        ],
+    ),
+    'manifest-path-trailing-slash': (
+        'metadata-entry',
+        [('path', 'manifest.json')],
+        [
+            'entries/example/fx-metadata/: listed in the manifest, no such entry',
+            'entries/example/fx-metadata: an entry the manifest does not list',
+            'manifest[0]: path is not entries/example/fx-metadata, the path its id names',
+        ],
+    ),
+    'manifest-row-member-twice': (
+        'metadata-entry',
+        [('path', 'manifest.json')],
+        [
+            'manifest.json: a member name is given twice',
+        ],
+    ),
+    'manifest-row-with-another-member': (
+        'metadata-entry',
+        [('path', 'manifest.json')],
+        [
+            'manifest[0]: unknown member title',
+        ],
+    ),
+    'manifest-row-without-entry': (
+        'metadata-entry',
+        [('path', 'manifest.json')],
+        [
+            'entries/example/fx-missing: listed in the manifest, no such entry',
+        ],
+    ),
+    'manifest-row-without-fixtures': (
+        'metadata-entry',
+        [('path', 'manifest.json')],
+        [
+            'manifest[0]: missing fixtures',
+        ],
+    ),
+    'upgrade-33-members': (
+        'metadata-entry',
+        [('member', 'upgrade')],
+        [
+            'entries/example/fx-metadata: upgrade has 33 members, over 32',
+        ],
+    ),
+    'upgrade-empty': (
+        'metadata-entry',
+        [('member', 'upgrade')],
+        [
+            'entries/example/fx-metadata: upgrade has no members',
+        ],
+    ),
+    'upgrade-key-not-a-digest': (
+        'metadata-entry',
+        [('member', 'upgrade')],
+        [
+            "entries/example/fx-metadata: upgrade: the key 'v0.1.0' is not a sha256 digest",
+        ],
+    ),
+    'upgrade-note-2049-characters': (
+        'metadata-entry',
+        [('member', 'upgrade')],
+        [
+            "entries/example/fx-metadata: upgrade: the note for 'sha256:52895deee7e135c99f48553cfcd01586aafcfea29232c03698aac6bec1ca6c31' is 2049 characters, over 2048",
+        ],
+    ),
+    'upgrade-note-empty': (
+        'metadata-entry',
+        [('member', 'upgrade')],
+        [
+            "entries/example/fx-metadata: upgrade: the note for 'sha256:52895deee7e135c99f48553cfcd01586aafcfea29232c03698aac6bec1ca6c31' is empty",
+        ],
+    ),
+    'verification-reader-bad-commit': (
+        'metadata-entry',
+        [('member', 'verification')],
+        [
+            "entries/example/fx-metadata: verification[0]: readers[0]'s commit 'main' is not 7 to 40 lower-case hexadecimal digits",
+        ],
+    ),
+    'verification-reader-empty-path': (
+        'metadata-entry',
+        [('member', 'verification')],
+        [
+            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/@f821757fcaf5cb9831dbcb1f8b386a5ead793e4a' has no path",
+        ],
+    ),
+    'verification-reader-without-commit': (
+        'metadata-entry',
+        [('member', 'verification')],
+        [
+            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/tools/dialect_verify.py' has no @<commit>",
+        ],
+    ),
+    'verification-runner-leading-zero': (
+        'metadata-entry',
+        [('member', 'verification')],
+        [
+            "entries/example/fx-metadata: verification[0]: runner 'v0.011.0' is not a release tag (vMAJOR.MINOR.PATCH, ASCII, no leading zeroes)",
+        ],
+    ),
+    'verification-runtime-prerelease': (
+        'metadata-entry',
+        [('member', 'verification')],
+        [
+            "entries/example/fx-metadata: verification[0]: runtime 'v0.32.0-rc.1' is not a release tag (vMAJOR.MINOR.PATCH, ASCII, no leading zeroes)",
+        ],
+    ),
 }
 
 
+def restore(tree: Path, base: Path, steps) -> None:
+    """Revert a refused tree's one change, in place (a scratch copy)."""
+    for step in steps:
+        if step[0] == "member":
+            entry_dir = tree / Tree(base).entry_dirs()[0].relative_to(base)
+            entry = load_strict((entry_dir / "entry.json").read_bytes())
+            entry[step[1]] = load_strict((Tree(base).entry_dirs()[0] / "entry.json").read_bytes())[step[1]]
+            (entry_dir / "entry.json").write_bytes((json.dumps(entry, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
+            rows = load_strict((tree / "manifest.json").read_bytes())
+            for row in rows:
+                if (tree / row["path"] / "entry.json").is_file():
+                    row["entryDigest"] = digest((tree / row["path"] / "entry.json").read_bytes())
+            (tree / "manifest.json").write_bytes((json.dumps(rows, indent=2, ensure_ascii=False) + "\n").encode("utf-8"))
+        elif step[0] == "path":
+            import shutil
+
+            target, source = tree / step[1], base / step[1]
+            if target.is_dir() and not target.is_symlink():
+                shutil.rmtree(target)
+            elif target.exists() or target.is_symlink():
+                target.unlink()
+            if source.is_dir():
+                shutil.copytree(source, target)
+            elif source.is_file():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(source, target)
+        else:
+            raise ValueError(f"no such step {step[0]}")
+
+
+def tree_files(base: Path) -> dict[str, bytes]:
+    """Every file of a tree but its own README.md, by relative path."""
+    return {
+        p.relative_to(base).as_posix(): p.read_bytes()
+        for p in sorted(base.rglob("*"))
+        if p.is_file() and p.relative_to(base).as_posix() != "README.md"
+    }
+
+
 class RefusedExamples(unittest.TestCase):
-    """tests/fixtures/refused/: one tree per refusal, each refused for its own reason."""
+    """tests/fixtures/refused/: one tree per refusal, each refused with exactly its own problems, and each
+    a passing example once its one change is reverted."""
 
     def test_every_refused_tree_is_named_here(self):
-        self.assertEqual(sorted(p.name for p in REFUSED.iterdir() if p.is_dir()), sorted(REFUSALS))
+        self.assertEqual(sorted(p.name for p in REFUSED.iterdir() if p.is_dir()), sorted(REFUSED_TREES))
 
-    def test_each_tree_is_refused_for_its_reason(self):
-        for name, reason in REFUSALS.items():
+    def test_each_tree_is_refused_with_exactly_its_problems(self):
+        for name, (_, _, expected) in REFUSED_TREES.items():
             with self.subTest(name):
-                problems = tree_problems(Tree(REFUSED / name))
-                self.assertTrue(any(reason in p for p in problems), problems)
+                self.assertEqual(sorted(tree_problems(Tree(REFUSED / name))), sorted(expected))
+
+    def test_no_two_trees_share_a_problem(self):
+        for name, (_, _, expected) in REFUSED_TREES.items():
+            own = set(expected) - {p for other, (_, _, e) in REFUSED_TREES.items() if other != name for p in e}
+            with self.subTest(name):
+                self.assertTrue(own, f"{name} has no problem of its own")
+
+    def test_each_tree_passes_once_its_change_is_reverted(self):
+        import shutil
+        import tempfile
+
+        for name, (base_name, steps, _) in REFUSED_TREES.items():
+            with self.subTest(name), tempfile.TemporaryDirectory() as tmp:
+                base = EXAMPLE.parent / base_name
+                tree = Path(tmp) / name
+                self.assertTrue((REFUSED / name).is_dir(), f"no refused tree {name}")
+                shutil.copytree(REFUSED / name, tree)
+                restore(tree, base, steps)
+                self.assertEqual(tree_problems(Tree(tree)), [])
+                restored, original = tree_files(tree), tree_files(base)
+                self.assertEqual(sorted(restored), sorted(original))
+                self.assertEqual([p for p in restored if restored[p] != original[p]], [])
+
+
+class BindingDocument(unittest.TestCase):
+    """binding.json's bound and form, held by the catalog itself (RFC 0018 §12, §4.4; RFC 0019 §3)."""
+
+    def copy(self, tmp):
+        import shutil
+
+        shutil.copytree(UNBOUND, Path(tmp), dirs_exist_ok=True)
+        tree = Tree(Path(tmp))
+        fixture = tree.entry_dirs()[0] / "fixtures" / "valid"
+        return tree, fixture / "binding.json", load_strict((fixture / "binding.json").read_bytes())
+
+    def test_65536_bytes_is_admitted_and_65537_refused(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tree, path, document = self.copy(tmp)
+            body = canon(document)
+            path.write_bytes(b"{" + b" " * (65536 - len(body)) + body[1:])
+            self.assertEqual(path.stat().st_size, 65536)
+            self.assertEqual(tree_problems(tree), [])
+            path.write_bytes(b"{" + b" " * (65537 - len(body)) + body[1:])
+            self.assertEqual(len(tree_problems(tree)), 1)
+
+    def test_the_form(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tree, path, document = self.copy(tmp)
+            source = document["sources"]["fx"]
+            refused = {
+                "not an object": [document],
+                "without sources": {"dialect": document["dialect"]},
+                "dialect another digest": {**document, "dialect": "sha256:" + "0" * 64},
+                "dialect not a digest": {**document, "dialect": document["dialect"].upper()},
+                "sources an array": {**document, "sources": [source]},
+                "source value not closed": {**document, "sources": {"fx": {**source, "shape": "mcp"}}},
+                "source value without profileDigest": {**document, "sources": {"fx": {"profile": "fx"}}},
+                "profile empty": {**document, "sources": {"fx": {**source, "profile": ""}}},
+                "profileDigest malformed": {**document, "sources": {"fx": {**source, "profileDigest": "fx"}}},
+            }
+            for label, changed in refused.items():
+                with self.subTest(label):
+                    path.write_bytes(canon(changed))
+                    self.assertTrue(tree_problems(tree), label)
+            path.write_bytes(b'{"dialect":"x","dialect":"y","sources":{}}')
+            self.assertTrue(tree_problems(tree))
+            path.write_bytes(canon(document))
+            self.assertEqual(tree_problems(tree), [])
+
+
+class ReaderLocators(unittest.TestCase):
+    """verification[].readers: `<owner>/<name>/<path>@<commit>`, the catalog's reading of RFC 0019 §3's
+    `<repository>/<path>@<commit>` until the RFC gives its grammar (judgment-pack-spec#166, item 5)."""
+
+    def test_well_formed_locators(self):
+        for reader in [
+            READER,
+            "Judgment-Pack/judgment-pack-runner/cmd/verify-run@82116bf",
+            "a/b/c@" + "0" * 40,
+            "Owner_1/name.with-dots/a/./b.py@abcdef0",
+            "o" * 100 + "/n/p@1234567",
+            "o/" + "n" * 100 + "/p@1234567",
+            "o/n/" + "p" * 188 + "@1234567",
+        ]:
+            with self.subTest(reader):
+                self.assertEqual(reader_problems("r", reader), [])
+
+    def test_the_200_character_bound(self):
+        self.assertEqual(len("o/n/" + "p" * 188 + "@1234567"), 200)
+        self.assertEqual(reader_problems("r", "o/n/" + "p" * 189 + "@1234567"), ["r is 201 characters, over 200"])
+
+    def test_malformed_locators(self):
+        for reader in [
+            "r", "", "a/b/c", "a/b/c@", "a/b/c@123456", "a/b/c@" + "0" * 41, "a/b/c@ABCDEF0", "a/b/c@main",
+            "a/b@1234567", "a/b/@1234567", "/b/c@1234567", "a//c@1234567", "a/b/c//d@1234567", "a/b/c/@1234567",
+            "a/b/../c@1234567", "a/b/c/..@1234567", "o" * 101 + "/b/c@1234567", "a/" + "n" * 101 + "/c@1234567",
+            "a b/c/d@1234567", "a/b/c@1234567\n", "o/n/" + "p" * 189 + "@1234567", None, 7,
+        ]:
+            with self.subTest(repr(reader)):
+                self.assertTrue(reader_problems("r", reader))
 
 
 class Scans(unittest.TestCase):

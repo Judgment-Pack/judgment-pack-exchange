@@ -198,9 +198,20 @@ settles any that it spells out.
 - A length in characters is a count of Unicode code points, as Python counts a string's length.
 - A dialect has an **unbound source** when one of its sources is of kind `operation` and names
   neither `profile` nor `profileDigest` (RFC 0018 §4.4); the tests decide `binding.json` by that.
-- The manifest is read within its bound: a file over 1 MiB is refused before it is parsed, and a
-  manifest over 1,024 rows is refused as a whole, with no row read further. The order of the names in
-  a fixture's `files` is not prescribed; the examples list them in byte order.
+- A fixture's `binding.json` is held by the tests themselves, whether or not any reader can replay
+  the fixture: at most 65,536 bytes (RFC 0018 §12), and, for a dialect with an unbound source, the
+  form of RFC 0018 §4.4: a closed object of `dialect`, the entry's `dialect.digest`, and `sources`,
+  naming each unbound source of the dialect and no other name, each a closed object of `profile`, a
+  non-empty string, and `profileDigest`, a digest.
+- A reader in `verification[].readers`, `<repository>/<path>@<commit>` in the RFC, is read as
+  `<owner>/<name>/<path>@<commit>`: owner and name each 1 to 100 characters of `[A-Za-z0-9_.-]`; a
+  path that is not empty and has no empty and no `..` segment; and a commit of 7 to 40 lower-case
+  hexadecimal digits. This is the catalog's reading until the RFC gives the locator's grammar
+  (judgment-pack-spec#166, item 5).
+- The manifest is read within its bound: the file's size is taken first, a file over 1 MiB is
+  refused before any byte of it is read or parsed, and otherwise exactly its size is read. A
+  manifest over 1,024 rows is refused as a whole, with no row read further. The order of the names
+  in a fixture's `files` is not prescribed; the examples list them in byte order.
 - A release tag and a compatibility value are checked by `release_tag_ok` and `compatibility_ok` in
   [`tests/test_entries.py`](../tests/test_entries.py); [`release.yml`](../.github/workflows/release.yml)
   holds a release's own tag to the same function.
@@ -211,7 +222,10 @@ settles any that it spells out.
   hold no separate byte bound on it.
 - The examples under [`tests/fixtures/`](../tests/fixtures/) are trees of the format's shape that
   are not entries: a passing example of each rule, and under `refused/` one tree per refusal, each a
-  passing example with one change.
+  passing example with one change. The tests require each refused tree to produce exactly the
+  problems listed for it, each problem naming the bound it fails, and each tree to have a problem no
+  other tree produces; and they revert each tree's one change in a scratch copy and require the
+  result to pass and to equal its passing example byte for byte.
 
 ## What the tests do about credentials and personal data
 

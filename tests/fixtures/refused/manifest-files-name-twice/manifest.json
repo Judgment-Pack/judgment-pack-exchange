@@ -9,8 +9,8 @@
         "name": "valid",
         "files": [
           "case.json",
-          "case.json",
           "preparation.json",
+          "profiles.json",
           "profiles.json",
           "sources.json"
         ]

@@ -138,12 +138,12 @@ its own dialect as an entry in any catalog.
 This catalog is released by [`release.yml`](../.github/workflows/release.yml), as
 [releasing](releasing.md) describes: a tag in the grammar, on a commit on `main`, after the `entries`
 checks pass at that commit. The release carries that commit's `manifest.json`, the blob byte for
-byte, and `checksums.txt`, with a build-provenance attestation, and is published only after a
-maintainer approves it. These assets are a copy for checking: a consumer following this contract
-reads the manifest and the entries from the tagged commit, and can compare the copy, its checksums
-and its attestation with that blob. The attestation says which workflow made the copy from which
-commit; it says nothing about any entry's review, and nothing here is signed by the catalog (RFC
-0019, Unresolved question 1).
+byte, and `checksums.txt`, both the subjects of a build-provenance attestation, and is published
+only after a maintainer approves it. These assets are a copy for checking: a consumer following this
+contract reads the manifest and the entries from the tagged commit, and can compare the copy, its
+checksums and its attestation with that blob. The attestation says which workflow made the files
+from which commit; it says nothing about any entry's review, and nothing here is signed by the
+catalog (RFC 0019, Unresolved question 1).
 
 This repository's tests hold the manifest and the entries a release carries to the form and bounds
 above (the CI job `entries`). The consumer's own fetch, replay and update checks are the consumer's:
