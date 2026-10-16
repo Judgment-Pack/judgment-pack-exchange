@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Judgment-Pack/judgment-pack-spec
-          ref: f821757fcaf5cb9831dbcb1f8b386a5ead793e4a
+          ref: 18aef51aa66a012e96cf9395471109bd77e037db
           path: .spec
           persist-credentials: false
 

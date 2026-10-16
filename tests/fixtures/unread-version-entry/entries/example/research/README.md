@@ -5,7 +5,8 @@ of RFC 0018's round 8: a question, constraints, a model, the evidence to retain,
 and the `answer` capability, and none of `profile`, `profileDigest` and `webProfiles`, so it is
 unbound. Its fixture carries `binding.json`, the binding document assigning the source the fixture's
 own AI profile. The catalog's form checker reads the document, and the tests hold the binding
-document to it. The specification's preparation verifier at the commit CI pins reads neither version
-3 nor a research profile, and an entry with a research source cannot be published while the readers
-refuse it (RFC 0019 §4), so the verifier test refuses this fixture. Its records are synthetic, and its
-`preparation.json` is a placeholder with a matching digest.
+document to it. The specification's preparation verifier at the commit CI pins reads version 3 and
+round 8's research source (RFC 0019 §4), so the verifier test replays this fixture: `sources.json`
+holds the research record (one retained response under the AI profile, and the answer citing it) and
+`preparation.json` the preparation the verifier computes from it. Its records are synthetic, and its
+receipt is signed by a throwaway key made for the example, whose private half is not kept.

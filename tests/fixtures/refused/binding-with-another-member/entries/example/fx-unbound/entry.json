@@ -24,7 +24,7 @@
     {
       "name": "valid",
       "path": "fixtures/valid",
-      "preparationDigest": "sha256:5c70a9d79398461e995c9784e3d01cb14fb81f54465b2af84040e89ff8be8b67"
+      "preparationDigest": "sha256:87b407063719735de6a086ed9c73274f1b9407c56d1a9d11cf0db7a5cae35ff1"
     }
   ],
   "verification": []
