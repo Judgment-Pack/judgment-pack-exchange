@@ -452,6 +452,9 @@ These are the tests' readings where the RFC leaves a spelling to the implementat
 settles any that it spells out.
 
 - A length in characters is a count of Unicode code points, as Python counts a string's length.
+- Every JSON file the tests hold to a form, an earlier release's manifest and entries included, is
+  read strictly: one value, no member name given twice, and none of the constants `NaN`, `Infinity`
+  and `-Infinity`, which JSON does not have.
 - A reader of entry format version 3 refuses an entry of any other `entryVersion` before reading
   its other members, as `entry-version-unread`, and a manifest row without `kind` as a row its
   closed form does not admit.
@@ -474,10 +477,10 @@ settles any that it spells out.
   push, or [`release.yml`](../.github/workflows/release.yml) calling `ci.yml`), whose earlier
   releases are the tags below it; on a branch or a pull request every release counts.
   [`ci.yml`](../.github/workflows/ci.yml) checks the repository out with `fetch-depth: 0` so the
-  tags are there. A shallow clone lists none of them, so its tag listing counts as one that cannot
-  be read; so does a tree outside a git checkout. When the tags cannot be read, an entry with
-  `upgrade` is refused, and the whole release is refused as `artifact-history-invalid`, whether or
-  not it holds a named entry: neither check falls back to form alone.
+  tags are there. A shallow clone may omit release history and tags, so its tag listing counts as
+  one that cannot be read; so does a tree outside a git checkout. When the tags cannot be read, an
+  entry with `upgrade` is refused, and the whole release is refused as `artifact-history-invalid`,
+  whether or not it holds a named entry: neither check falls back to form alone.
 - The artifact-history check holds an earlier manifest to its own row form: version 1's rows,
   without `kind`, when none of its rows has one, and otherwise the row form of versions 2 and 3. It
   is read within 1 MiB and 1,024 rows, and each entry a row pins within 64 KiB, its size taken

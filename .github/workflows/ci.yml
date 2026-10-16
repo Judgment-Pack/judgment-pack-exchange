@@ -15,8 +15,9 @@ jobs:
     steps:
       # Every commit and tag: an entry's `upgrade` keys are checked against the manifests of the
       # catalog's earlier releases, and every artifact pair against the entries those manifests pin,
-      # read from its tags (RFC 0019 §§3, 7; docs/entry-format.md). A shallow clone lists no tags,
-      # and the tests refuse it as artifact-history-invalid rather than check by form alone.
+      # read from its tags (RFC 0019 §§3, 7; docs/entry-format.md). A shallow clone may omit release
+      # history and tags, and the tests refuse it as artifact-history-invalid rather than check by
+      # form alone.
       - name: Check out the repository with its tags
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

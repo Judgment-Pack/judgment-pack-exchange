@@ -43,8 +43,8 @@ system. Critical feedback and counterexamples are as valuable as new entries.
 - **An `upgrade` note is keyed by a released entry's bytes**: the `entryDigest` of this entry's row
   in an earlier release's manifest, never an artifact pair. The tests read the earlier releases, and
   the entries their rows pin, from the repository's tags, so a full clone that has them
-  (`git fetch --tags`) checks what CI checks; a shallow clone, which lists no tags, is refused as
-  `artifact-history-invalid`.
+  (`git fetch --tags`) checks what CI checks; a shallow clone, which may omit release history and
+  tags, is refused as `artifact-history-invalid`.
 - **Say only what the format lets you say.** The entry's `assertion` is the format's sentence,
   unchanged; the README states what the dialect is for and nothing about the truth of any record.
 - **No credentials, tokens or personal data** in any file. Record fixtures from synthetic or

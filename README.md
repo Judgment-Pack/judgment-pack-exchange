@@ -74,8 +74,8 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md). In short:
 
 To run the tests, check out the specification at the commit `ci.yml` pins into `.spec/` and run
 `python -m unittest discover -s tests -v` in a full clone with the repository's tags. Without
-`.spec/` the preparation-verifier test is skipped and says so; without the tags, as in a shallow
-clone, the artifact-history check refuses the release.
+`.spec/` the preparation-verifier test is skipped and says so; in a shallow clone, which may omit
+release history and tags, the artifact-history check refuses the release.
 
 ## Licence
 

@@ -109,13 +109,20 @@ def canon(value) -> bytes:
 
 
 def load_strict(data: bytes):
+    """One JSON value, read strictly: no member name given twice, and none of the constants `NaN`, `Infinity`
+    and `-Infinity`, which Python's reader accepts and JSON (RFC 8259) does not. Every file the catalog holds
+    to a form is read with it; a refusal is a ValueError."""
+
     def no_duplicates(pairs):
         names = [k for k, _ in pairs]
         if len(names) != len(set(names)):
             raise ValueError("a member name is given twice")
         return dict(pairs)
 
-    return json.loads(data.decode("utf-8"), object_pairs_hook=no_duplicates)
+    def no_constant(name):
+        raise ValueError(f"{name} is not a JSON value")
+
+    return json.loads(data.decode("utf-8"), object_pairs_hook=no_duplicates, parse_constant=no_constant)
 
 
 def read_manifest(path: Path):
@@ -1161,8 +1168,8 @@ def release_commits(repo: Path, below: str | None = None) -> list[tuple[str, str
     `[(tag, the commit it resolves to)]`; None when the tag listing cannot be read.
 
     A release is a tag in the release-tag grammar resolved to a commit, an annotated tag peeled; a tag
-    that resolves to no commit is no release. A shallow clone's listing is not a reading of the catalog's
-    tags (a clone made with a depth fetches none of them), so it is a listing that cannot be read."""
+    that resolves to no commit is no release. A shallow clone may omit release history and tags, so its
+    listing is not a reading of the catalog's tags: it is a listing that cannot be read."""
     shallow = git(repo, "rev-parse", "--is-shallow-repository")
     if shallow is None or shallow.strip() != b"false":
         return None
@@ -1655,6 +1662,23 @@ class ExampleEntry(unittest.TestCase):
             load_strict(b'{"a":1,"a":2}')
         with self.assertRaises(ValueError):
             load_strict(b'{"a":{"b":1,"b":2}}')
+
+    def test_constants_json_does_not_have_are_refused(self):
+        import tempfile
+
+        for constant in ("NaN", "Infinity", "-Infinity"):
+            with self.subTest(constant):
+                with self.assertRaises(ValueError):
+                    load_strict(b'{"a": [1, ' + constant.encode() + b"]}")
+                with tempfile.TemporaryDirectory() as tmp:
+                    tree = scratch_tree(EXAMPLE, tmp)
+                    path = tree.entry_dirs()[0] / "entry.json"
+                    held = path.read_bytes().replace(b'"title": "Example: currency conversion on an invoice"', b'"title": ' + constant.encode(), 1)
+                    path.write_bytes(held)
+                    rows = tree.manifest()
+                    rows[0]["entryDigest"] = digest(held)
+                    tree.manifest_path.write_bytes((json.dumps(rows, indent=2) + "\n").encode("utf-8"))
+                    self.assertEqual(tree_problems(tree), [f"entries/example/fx-convert: entry.json: {constant} is not a JSON value"])
 
     def test_file_size_bounds(self):
         import tempfile
@@ -4022,6 +4046,30 @@ class ArtifactHistory(unittest.TestCase):
                 self.assertEqual(len(problems), 1, problems)
                 self.assertTrue(problems[0].startswith("artifact-history-invalid: release v0.1.0: entries/example/fx-named/entry.json is malformed: "), problems)
 
+    def test_json_constants_in_history_are_artifact_history_invalid(self):
+        # JSON has no NaN, Infinity or -Infinity, which Python's reader admits unless told otherwise: an earlier
+        # entry holding one is malformed, named pair or not, and so is an earlier manifest holding one.
+        import re
+        import tempfile
+
+        named = published(self.earlier("example.fx-named", self.named()["dialect"]["digest"]))[1]
+        version_1 = (EXAMPLE_RELEASES / "v0.1.0/entries/example/fx-convert/entry.json").read_bytes()
+        for constant in ("NaN", "Infinity", "-Infinity"):
+            for label, (ident, entry_bytes) in {"a named entry": ("example.fx-named", named), "an entry without a pair": ("example.fx-convert", version_1)}.items():
+                held = re.sub(rb'"title": "[^"]*"', b'"title": ' + constant.encode(), entry_bytes, count=1)
+                self.assertNotEqual(held, entry_bytes)
+                row, _ = published(load_strict(entry_bytes))
+                row = {**row, "id": ident, "path": entry_path(ident), "entryDigest": digest(held)}
+                manifest = (json.dumps([row], indent=2) + "\n").encode("utf-8")
+                with self.subTest(f"{constant} in {label}"), tempfile.TemporaryDirectory() as tmp:
+                    repo = history_repository(self, Path(tmp) / "repo", [("v0.1.0", {"manifest.json": manifest, f"{row['path']}/entry.json": held})])
+                    self.assertEqual(self.problems(repo), [
+                        f"artifact-history-invalid: release v0.1.0: {row['path']}/entry.json is malformed: {constant} is not a JSON value",
+                    ])
+            with self.subTest(f"{constant} in a manifest"), tempfile.TemporaryDirectory() as tmp:
+                repo = history_repository(self, Path(tmp) / "repo", [("v0.1.0", {"manifest.json": f"[{constant}]\n".encode()})])
+                self.assertEqual(self.problems(repo), [f"artifact-history-invalid: release v0.1.0: its manifest.json is malformed: {constant} is not a JSON value"])
+
     def test_an_unreadable_listing_and_a_shallow_clone_are_refused(self):
         import shutil
         import tempfile
@@ -4035,8 +4083,8 @@ class ArtifactHistory(unittest.TestCase):
                 ("v0.2.0", release_files()),
             ])
             self.assertEqual(self.problems(repo), [])
-            # A clone made with a depth lists no tags: the check refuses it, never passing by form alone. The clone is
-            # local, from the scratch repository's path.
+            # A shallow clone may omit release history and tags: the check refuses it, never passing by form alone.
+            # The clone is local, from the scratch repository's path.
             shallow = Path(tmp) / "shallow"
             environment = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
             subprocess.run(["git", "clone", "-q", "--depth", "1", repo.as_uri(), str(shallow)], check=True, capture_output=True, env=environment, timeout=60)
