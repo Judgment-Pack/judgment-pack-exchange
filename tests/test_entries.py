@@ -79,7 +79,7 @@ MAX_BINDING_BYTES = 65536
 OWNER_OR_NAME = re.compile(r"[A-Za-z0-9_.-]{1,100}")
 SEGMENT = re.compile(r"[A-Za-z0-9_.-]+")
 COMMIT = re.compile(r"[0-9a-f]{7,40}")
-READER = "Judgment-Pack/judgment-pack-spec/tools/dialect_verify.py@8371cdb8f3f791f1a826b609da0d102a1c93ae6c"
+READER = "Judgment-Pack/judgment-pack-spec/tools/dialect_verify.py@c51c81de244a0da279f8b926507e3fe2142348d1"
 ABSOLUTE_URI = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:[^\s]+")
 SKIPPED_DIRS = {".git", ".spec", ".venv", "node_modules", "__pycache__"}
 # The earlier releases of the example catalog the trees under tests/fixtures/ stand for, one directory
@@ -3024,21 +3024,21 @@ REFUSED_TREES = {
         'metadata-entry',
         [('member', 'verification')],
         [
-            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/tools/./dialect_verify.py@8371cdb8f3f791f1a826b609da0d102a1c93ae6c' has an empty, '.' or '..' path segment",
+            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/tools/./dialect_verify.py@c51c81de244a0da279f8b926507e3fe2142348d1' has an empty, '.' or '..' path segment",
         ],
     ),
     'verification-reader-empty-path': (
         'metadata-entry',
         [('member', 'verification')],
         [
-            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/@8371cdb8f3f791f1a826b609da0d102a1c93ae6c' has no path",
+            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/@c51c81de244a0da279f8b926507e3fe2142348d1' has no path",
         ],
     ),
     'verification-reader-segment-character': (
         'metadata-entry',
         [('member', 'verification')],
         [
-            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/tools/dialect+verify.py@8371cdb8f3f791f1a826b609da0d102a1c93ae6c' has a path segment of a character outside [A-Za-z0-9_.-]",
+            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/tools/dialect+verify.py@c51c81de244a0da279f8b926507e3fe2142348d1' has a path segment of a character outside [A-Za-z0-9_.-]",
         ],
     ),
     'verification-reader-without-commit': (
