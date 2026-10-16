@@ -1,1 +1,10 @@
-[]
+[
+  {
+    "id": "judgmentpack.company-research",
+    "kind": "preset",
+    "path": "entries/judgmentpack/company-research",
+    "entryDigest": "sha256:fa09df8961551df54f4977e849951566fcff6bd998e9c2dd7729e40e90cb4244",
+    "dialectDigest": "sha256:6c1252a8c584a683a078ed17ce31ba102e140f78dccdd602883bfbceba154fde",
+    "fixtures": []
+  }
+]
