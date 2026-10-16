@@ -1,0 +1,21 @@
+{
+  "entryVersion": 3,
+  "kind": "preset",
+  "id": "judgmentpack.procurement-opportunity",
+  "title": "Public procurement opportunities",
+  "description": "Prepare public procurement facts without deciding eligibility or bid priority.",
+  "direction": "input",
+  "dialect": {
+    "path": "dialect.json",
+    "dialectVersion": 3,
+    "digest": "sha256:1090d237ecc99a3ea45380a54f17a416bef8295d19cac7c0993d414ccf2fcc57"
+  },
+  "requires": {},
+  "sourceKinds": [
+    "research"
+  ],
+  "licence": "Apache-2.0",
+  "author": "Judgment Pack contributors",
+  "assertion": "The author asserts that these rules derive these facts and this evidence-availability from records of that shape, or these arguments from that disposition, and asserts nothing about any record's truth.",
+  "verification": []
+}
