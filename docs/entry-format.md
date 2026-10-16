@@ -503,7 +503,7 @@ settles any that it spells out.
   holds a release's own tag to the same function.
 - Every value of an output document's `policies` is held to the decision-policy form of RFC 0018 §10 and the gateway's `docs/design/engine-config.md` (`decisionPolicy`, at v0.15.0): a closed object, `outcomes` required, `packs`, `reviewed`, `bind`, `fix`, `closed` and `requireSignedRecord` optional and of the gateway's types, every `argument` and `fact` an RFC 6901 pointer.
 - The preparation verifier the tests run is `tools/dialect_verify.py` at the specification commit
-  `ci.yml` pins, `8371cdb`, a reader of rounds 8 to 11: dialect versions 2 and 3, the named Dialect
+  `ci.yml` pins, `c51c81d`, a reader of rounds 8 to 12: dialect versions 2 and 3, the named Dialect
   artifact formats of RFC 0021 (`formatVersion` `"2.0.0"` or `"3.0.0"` with `id` and `version`), the
   source kinds `operation` and `research`, the name an unbound operation's `record` carries (round
   10), and the fixture's own `binding.json` for an unbound source (RFC 0019 §4). The digest the
