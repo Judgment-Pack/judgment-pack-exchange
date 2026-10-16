@@ -3,7 +3,7 @@
     "id": "example.fx-metadata",
     "kind": "recipe",
     "path": "entries/example/fx-metadata",
-    "entryDigest": "sha256:22c35f358226b209ab2b70d4ce58a5611d694904d5606bb348c5c8dc72be4286",
+    "entryDigest": "sha256:4369430ae2cd498af0cca601db356b4a165f3c6e8be3bf9b67cefea0f030cda9",
     "dialectDigest": "sha256:d960dcd2423a07a478ee7defc4649072903141e99c39201466e58ec52d73efbe",
     "fixtures": [
       {

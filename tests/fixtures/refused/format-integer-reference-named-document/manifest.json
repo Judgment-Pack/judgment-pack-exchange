@@ -1,0 +1,20 @@
+[
+  {
+    "id": "example.fx-named",
+    "kind": "dialect",
+    "path": "entries/example/fx-named",
+    "entryDigest": "sha256:f90dbc539fc4d54ff6738f1e39c61d69f9e8635e6acf36bcfc8424fec161e9b1",
+    "dialectDigest": "sha256:8d874f38a514469de0b584273afb8f7a4820a01e9a5a58af7a5dec10c4bcdbf8",
+    "fixtures": [
+      {
+        "name": "valid",
+        "files": [
+          "case.json",
+          "preparation.json",
+          "profiles.json",
+          "sources.json"
+        ]
+      }
+    ]
+  }
+]

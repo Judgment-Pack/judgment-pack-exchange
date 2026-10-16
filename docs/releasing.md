@@ -45,8 +45,10 @@ question 1).
 ## Prepare the release
 
 1. Open a pull request that adds `docs/releases/<tag>.md`: the entries added, changed and withdrawn
-   since the last release, as the release contract counts them; the specification commit CI pins;
-   and anything a consumer must review. It is the text the release page will carry.
+   since the last release, as the release contract counts them, with each named entry's `artifact`
+   pair; the entry format version, 3, which a consumer must read before it imports the release; the
+   specification commit CI pins; and anything a consumer must review. It is the text the release
+   page will carry.
 2. Run the checks locally, with the specification checked out at the commit `ci.yml` pins
    ([`CONTRIBUTING.md`](../CONTRIBUTING.md), "Local checks"):
 
@@ -74,7 +76,9 @@ A tag has the [release-tag grammar](entry-format.md#release-tags-and-compatibili
 prerelease and no build metadata. Choose a tag above every earlier release's, by the three
 integers: a consumer refuses an update to a lower tag. A tag is never moved or reused: a consumer
 refuses a tag that resolves to a commit other than the one it retained for it. A fix is a new
-release.
+release. An artifact pair a release publishes is as fixed as its tag: a later release may withdraw
+the entry, but never publish other content under the pair; a corrected document is a new artifact
+version.
 
 ## What the workflow does
 
@@ -85,9 +89,12 @@ Every job works on the commit the run was started for, by its digest, not on the
    that commit is on `main`; its notes exist; and the `release` environment has a reviewer rule.
 2. **Runs CI at that commit.** The release calls the commit's own
    [`ci.yml`](../.github/workflows/ci.yml): the `entries` checks, with the specification at the
-   commit it pins. Each entry's `upgrade` keys are checked against the releases below the tag, read
-   from the repository's tags ([upgrade keys](entry-format.md#authoring-metadata)). A check `main`
-   has gained since that commit is not run.
+   commit it pins. Each entry's `upgrade` keys are checked against the releases below the tag, and
+   every artifact pair against the entries those releases pinned, all read from the repository's
+   tags ([upgrade keys](entry-format.md#authoring-metadata),
+   [named artifacts](entry-format.md#named-artifacts)): other content under a published pair is
+   `artifact-content-changed`, and an earlier release that cannot be read is
+   `artifact-history-invalid`. A check `main` has gained since that commit is not run.
 3. **Writes the release's files.** `manifest.json` is read as the blob of the tagged commit
    (`git cat-file blob <commit>:manifest.json`) and compared with the checkout; `checksums.txt` is
    written over it and checked.

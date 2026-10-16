@@ -1,0 +1,29 @@
+{
+  "entryVersion": 3,
+  "kind": "dialect",
+  "id": "example.triage-write",
+  "title": "Example: a write-back policy",
+  "direction": "output",
+  "pack": {
+    "id": "https://example.com/packs/vendor-intake",
+    "versions": ">=0.1.0"
+  },
+  "artifact": {
+    "id": "urn:judgmentpack:dialect:example",
+    "version": "0.1.0"
+  },
+  "output": {
+    "path": "output.json",
+    "outputVersion": 1,
+    "digest": "sha256:03b761abe545e0f87982ee218f013c31b66ccad3891d761e046cfbf8ecc8093b"
+  },
+  "requires": {
+    "platform": "azure-devops"
+  },
+  "sourceKinds": [],
+  "licence": "Apache-2.0",
+  "author": "example",
+  "assertion": "The author asserts that these rules derive these facts and this evidence-availability from records of that shape, or these arguments from that disposition, and asserts nothing about any record's truth.",
+  "fixtures": [],
+  "verification": []
+}

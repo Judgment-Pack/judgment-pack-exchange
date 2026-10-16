@@ -3,7 +3,7 @@
     "id": "example.triage-write",
     "kind": "dialect",
     "path": "entries/example/triage-write",
-    "entryDigest": "sha256:54434135eae3a0f1efd42f4de1a7537de34eaebff34cbb3c03362472c1b20cce",
+    "entryDigest": "sha256:1f3e0e78c540fc073399966a5d6017f1f1bb37f2ff51ed945feccd94bc6fe5c6",
     "outputDigest": "sha256:1a2f702352a28d6dcd5cf4eeb61fd8a11ed106ddc1c1a2ca3bc2811b3f766e81",
     "fixtures": []
   }

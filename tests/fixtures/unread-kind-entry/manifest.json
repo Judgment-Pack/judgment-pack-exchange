@@ -3,7 +3,7 @@
     "id": "example.selected-file",
     "kind": "dialect",
     "path": "entries/example/selected-file",
-    "entryDigest": "sha256:955afd632436b1ead67817f3976b75eead8c9afdb4ff62210d6809633b1e91dc",
+    "entryDigest": "sha256:4d3d785bbf6745c01e6d70d8786165d64aa672a0596601b7d48407f14ef171ee",
     "dialectDigest": "sha256:86ce72e866e5fdb06c6ecaa8eafa720208c6cd313687f9b8fe860666440f8ea5",
     "fixtures": [
       {

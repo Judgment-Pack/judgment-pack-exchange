@@ -1,0 +1,10 @@
+[
+  {
+    "id": "example.triage-write",
+    "kind": "dialect",
+    "path": "entries/example/triage-write",
+    "entryDigest": "sha256:f5063ff39211539953ee3f5bcd96edeac88b9b531a699370c5bf919d06b05ad2",
+    "outputDigest": "sha256:1a2f702352a28d6dcd5cf4eeb61fd8a11ed106ddc1c1a2ca3bc2811b3f766e81",
+    "fixtures": []
+  }
+]

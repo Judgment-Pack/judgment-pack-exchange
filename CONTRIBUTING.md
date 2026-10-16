@@ -19,12 +19,32 @@ system. Critical feedback and counterexamples are as valuable as new entries.
   bindable source unbound) and `README.md`, and it is checked by its document's form, its digests
   and the scans only. Every `dialect.json`, of either kind, is held to its document form by the
   catalog's own form checker.
+- **Every entry is of entry format version 3**: `entryVersion` is `3`, and the tests refuse an entry
+  of version 1 or 2 as `entry-version-unread`, so a release never mixes versions.
+- **A named document carries its identity, read from the document.** For a document in a named
+  format of RFC 0021 (`formatVersion` `"2.0.0"` or `"3.0.0"`, with `id` and `version`), an entry of
+  kind `dialect` references it as `{path, formatVersion, digest}` and carries `artifact`, exactly
+  the document's `id` and `version`. Copy both from the document; never edit them on their own. The
+  tests refuse a reference or pair that does not hold against the document by name
+  (`dialect-reference-form`, `dialect-format-mismatch`, `artifact-required`, `artifact-forbidden`,
+  `artifact-malformed`, `artifact-mismatch`, `dialect-digest-mismatch`), the first that applies. An
+  integer-format document keeps `{path, dialectVersion, digest}` and no `artifact`, and a preset
+  stays integer-only, with neither `formatVersion` nor `artifact`.
+- **A published pair is never reused for other content.** `(artifact.id, artifact.version)` is
+  immutable across this catalog's history, an entry since withdrawn included: other canonical
+  content under a pair any release published, or under a pair another entry of the release
+  declares, is `artifact-content-changed`, so new content needs a new artifact version. The same
+  content under the pair is admitted in another entry. The entry holds the published document,
+  never an installation's bound derivative, which keeps the pair and carries no marker: a reviewer
+  refuses one.
 - **An entry with a `research` source publishes synthetic fixtures only**: every fixture of such an
   entry is made for the purpose, never recorded from a real person, customer or account
   (RFC 0019 §6).
 - **An `upgrade` note is keyed by a released entry's bytes**: the `entryDigest` of this entry's row
-  in an earlier release's manifest. The tests read the earlier releases from the repository's tags,
-  so a clone that has them (`git fetch --tags`) checks what CI checks.
+  in an earlier release's manifest, never an artifact pair. The tests read the earlier releases, and
+  the entries their rows pin, from the repository's tags, so a full clone that has them
+  (`git fetch --tags`) checks what CI checks; a shallow clone, which may omit release history and
+  tags, is refused as `artifact-history-invalid`.
 - **Say only what the format lets you say.** The entry's `assertion` is the format's sentence,
   unchanged; the README states what the dialect is for and nothing about the truth of any record.
 - **No credentials, tokens or personal data** in any file. Record fixtures from synthetic or
@@ -56,14 +76,17 @@ CI runs the checks on Python 3.12, with the specification checked out at the com
 
 ```bash
 git clone https://github.com/Judgment-Pack/judgment-pack-spec.git .spec
-git -C .spec checkout cae45edb94e57c9505813d2e64820342d6bd2ef5
+git -C .spec checkout 8371cdb8f3f791f1a826b609da0d102a1c93ae6c
 python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -v
 ```
 
 `.spec/` is ignored and never committed. Without it the preparation-verifier test is skipped, so a
-green run without it checks less than CI does. The catalog's own form checker
-(`tests/dialect_form.py`) needs no checkout: it runs on every `dialect.json` with or without `.spec/`.
+green run without it checks less than CI does. The tests read the catalog's earlier releases from
+its tags, so run them in a full clone with its tags (`git fetch --tags`): in a shallow clone, or
+outside a git checkout, the artifact-history check refuses the release rather than check by form
+alone. The catalog's own form checker (`tests/dialect_form.py`) needs no checkout: it runs on every
+`dialect.json` with or without `.spec/`.
 
 ## Developer Certificate of Origin
 

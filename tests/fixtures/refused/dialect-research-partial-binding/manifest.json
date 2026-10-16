@@ -3,7 +3,7 @@
     "id": "example.research",
     "kind": "dialect",
     "path": "entries/example/research",
-    "entryDigest": "sha256:34dd6e1d2fe7429456e7ee3a8a8e572fbb6ce98a7d93a3e0ed15b07c2f22b3e5",
+    "entryDigest": "sha256:d5f235a2e1e5043ad1072aac74af88fa84442b2129f5c3e71ab8ea0b57fc9b5b",
     "dialectDigest": "sha256:820d7b955fd930a6b45c32a265bb7fa7f40f328f86e8e20c9bc4c91c34d1949b",
     "fixtures": [
       {

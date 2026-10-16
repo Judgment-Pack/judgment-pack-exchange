@@ -1,9 +1,9 @@
 """The catalog's own form checker (tests/dialect_form.py), on hand-written documents.
 
-Each document here is written for these tests, from RFC 0018 §§2–8 and 12 as round 8 amends them; none
-is taken from the specification's vectors or its readers. Every form the checker reads has a passing
-document, and every refusal it implements has a document refused with its code and a detail naming the
-rule.
+Each document here is written for these tests, from RFC 0018 §§2–8 and 12 through round 11 and the named
+formats RFC 0021 adds (spec/dialect.md §2.1); none is taken from the specification's vectors or its
+readers. Every form the checker reads has a passing document, and every refusal it implements has a
+document refused with its code and a detail naming the rule.
 """
 
 from __future__ import annotations
@@ -485,6 +485,95 @@ class VersionAndKindsNotRead(unittest.TestCase):
                 refused(self, incomplete, "input-malformed", "has no member maxAge")
                 document["version"] = 2
                 refused(self, document, "input-malformed", f"a version-2 document names source kind {kind}")
+
+
+def named(base, selector: str, identity: str = "urn:judgmentpack:dialect:example", version: str = "0.1.0") -> dict:
+    """A document of base's translation forms in the named format `selector` (§2.1): the integer `version`
+    replaced by `formatVersion`, `id` and `version`, and the encoding rule of version 3 applied."""
+    document = base() if callable(base) else copy.deepcopy(base)
+    document.pop("version")
+    for name in ("provider", "facts", "evidence"):
+        document.pop(name, None)
+    return {"formatVersion": selector, "id": identity, "version": version, **document}
+
+
+class NamedFormats(unittest.TestCase):
+    """§2.1 as RFC 0021 adds it: the named formats "2.0.0" and "3.0.0", each the translation forms of the
+    family it selects, with `id` and an artifact `version` in place of the integer `version`, and version 3's
+    encoding rule over the whole document."""
+
+    def test_each_named_form_the_checker_reads(self):
+        for label, document in {
+            "2.0.0, bound operations, a rule and a local file": named(operation_document, "2.0.0"),
+            "3.0.0, an unbound operation, a bound one and a Drive file": named(unbound_document, "3.0.0"),
+            "3.0.0, research of round 8": named(research_document, "3.0.0"),
+            "a case-only document of 2.0.0": {"formatVersion": "2.0.0", "id": "x", "version": "0.0.0", "case": {"facts": [], "evidence": []}},
+            "an artifact version independent of the selector": named(unbound_document, "3.0.0", version="12.0.3"),
+            "an artifact version of large components": named(operation_document, "2.0.0", version="12345678901234567890.0.1"),
+            "an id of 1024 UTF-8 bytes": named(unbound_document, "3.0.0", identity="urn:" + "é" * 510),
+            "an id that is not a URN, compared as written": named(unbound_document, "3.0.0", identity="Company-Qualification/é"),
+            "admits written empty in 2.0.0": {**named(operation_document, "2.0.0"), "admits": {}},
+        }.items():
+            with self.subTest(label):
+                self.assertIsNone(check(encode(document)))
+
+    def test_each_named_refusal(self):
+        N2 = lambda: named(operation_document, "2.0.0")  # noqa: E731,N806
+        N3 = lambda: named(unbound_document, "3.0.0")  # noqa: E731,N806
+        R3 = lambda: named(research_document, "3.0.0")  # noqa: E731,N806
+        cases = {
+            # The root members of §2.1.
+            "an unknown selector": (N3, lambda d: d.update(formatVersion="4.0.0"), "formatVersion '4.0.0' is not exactly"),
+            "a selector of two components": (N3, lambda d: d.update(formatVersion="3.0"), "formatVersion '3.0' is not exactly"),
+            "a selector that is a number": (N3, lambda d: d.update(formatVersion=3), "formatVersion 3 is not exactly"),
+            "a selector with a space": (N3, lambda d: d.update(formatVersion="3.0.0 "), "is not exactly"),
+            "no id": (N3, lambda d: d.pop("id"), "has no member id"),
+            "no artifact version": (N3, lambda d: d.pop("version"), "has no member version"),
+            "an empty id": (N3, lambda d: d.update(id=""), "id is not a non-empty string"),
+            "an id that is a number": (N3, lambda d: d.update(id=1), "id is not a non-empty string"),
+            "an id of 1025 UTF-8 bytes": (N3, lambda d: d.update(id="urn:" + "é" * 510 + "x"), "1025 UTF-8 bytes, over 1024"),
+            "an id with a control character": (N3, lambda d: d.update(id="urn:a\nb"), "an ASCII control character, a space or DEL"),
+            "an id with a space": (N3, lambda d: d.update(id="urn:a b"), "an ASCII control character, a space or DEL"),
+            "an id with DEL": (N3, lambda d: d.update(id="urn:a\x7fb"), "an ASCII control character, a space or DEL"),
+            "an artifact version that is a number": (N3, lambda d: d.update(version=1), "version 1 is not an artifact version"),
+            "an artifact version that is an integer dialect version": (N3, lambda d: d.update(version=3), "version 3 is not an artifact version"),
+            "an artifact version with a leading zero": (N3, lambda d: d.update(version="0.01.0"), "is not an artifact version"),
+            "an artifact version with a suffix": (N3, lambda d: d.update(version="0.1.0-rc.1"), "is not an artifact version"),
+            "an artifact version of two components": (N3, lambda d: d.update(version="0.1"), "is not an artifact version"),
+            "an artifact version of non-ASCII digits": (N3, lambda d: d.update(version="0.١.0"), "is not an artifact version"),
+            "a member §2.1 does not list": (N3, lambda d: d.update(name="example"), "has the member 'name'"),
+            # Family 2 gains neither unbound nor research sources.
+            "2.0.0 with an unbound operation": (lambda: named(unbound_document, "2.0.0"), lambda d: None, "has the unbound source 'items': family 2 has no unbound form"),
+            "2.0.0 with a research source": (lambda: named(research_document, "2.0.0"), lambda d: None, "a document of the named format 2.0.0 names source kind research"),
+            "2.0.0 with an http source": (N2, lambda d: d["sources"].append(unread_kind_source("http")), "names source kind http"),
+            # Version 3's encoding rule, in both named formats.
+            "2.0.0 with provider": (N2, lambda d: d.update(provider=""), "the named format 2.0.0 is written one way: provider is a member of version 2 alone"),
+            "2.0.0 with facts": (N2, lambda d: d.update(facts=None), "facts is a member of version 2 alone"),
+            "3.0.0 with evidence": (N3, lambda d: d.update(evidence=None), "the named format 3.0.0 is written one way: evidence is a member of version 2 alone"),
+            "2.0.0 with sources written empty": (N2, lambda d: d.update(sources=[]), "the named format 2.0.0 is written one way: sources is written empty"),
+            "3.0.0 with unmapped written empty": (N3, lambda d: d.update(unmapped=[]), "unmapped is written empty"),
+            "2.0.0 with unmappedEvidence written empty": (N2, lambda d: d.update(unmappedEvidence=[]), "unmappedEvidence is written empty"),
+            "2.0.0 with case parameters written empty": (N2, lambda d: d["case"].update(parameters={}), "case.parameters is written empty"),
+            "3.0.0 with a source's parameters written empty": (N3, lambda d: d["sources"][1].update(parameters={}), "parameters is written empty"),
+            "2.0.0 with admits.facts written empty": (N2, lambda d: d["admits"].update(facts={}), "admits.facts is written empty"),
+            # The family's forms still hold.
+            "3.0.0 with a research source partly bound": (R3, lambda d: d["sources"][0].update(profile="ai"), "partial binding members"),
+            "2.0.0 with a rule without its always clause": (N2, lambda d: source(d, "vendor")["read"]["rule"]["clauses"].pop(), "last clause's when"),
+        }
+        for label, (base, alter, fragment) in cases.items():
+            with self.subTest(label):
+                refused(self, altered(base, alter), "input-malformed", fragment)
+
+    def test_an_integer_document_carries_no_named_member(self):
+        refused(self, {**unbound_document(), "id": "urn:judgmentpack:dialect:example"}, "input-malformed", "has the member 'id'")
+        # With formatVersion, the document is named: its version is then an artifact version, never a dialect version.
+        refused(self, {**unbound_document(), "formatVersion": "3.0.0", "id": "x"}, "input-malformed", "version 3 is not an artifact version")
+        refused(self, {**named(unbound_document, "3.0.0"), "version": 4}, "input-malformed", "version 4 is not an artifact version")
+
+    def test_a_kind_the_checker_does_not_read_comes_after_the_named_form(self):
+        document = named(with_unread_kinds, "3.0.0")
+        refused(self, document, "kind-unread", "source kind http is not one the catalog's form checker reads")
+        refused(self, {**document, "id": ""}, "input-malformed", "id is not a non-empty string")
 
 
 def refusal_cases() -> dict:

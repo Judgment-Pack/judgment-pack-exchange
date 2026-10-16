@@ -1,5 +1,5 @@
 {
-  "entryVersion": 2,
+  "entryVersion": 3,
   "kind": "dialect",
   "id": "example.a-first",
   "title": "Example: currency conversion with authoring metadata",

@@ -1,5 +1,5 @@
 {
-  "entryVersion": 2,
+  "entryVersion": 3,
   "kind": "dialect",
   "id": "example.fx.metadata",
   "title": "Example: currency conversion with authoring metadata",

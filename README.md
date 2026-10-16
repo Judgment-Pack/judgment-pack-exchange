@@ -23,13 +23,16 @@ authorised, or whether a decision made with the dialect is sound.
 
 ## The entry format in brief
 
-An entry is a directory `entries/<publisher>/<name>/`, of entry format version 2:
+An entry is a directory `entries/<publisher>/<name>/`, of entry format version 3:
 
-- `entry.json`: a closed object naming the entry (`entryVersion` `2`, `kind`, `id`, `title`,
+- `entry.json`: a closed object naming the entry (`entryVersion` `3`, `kind`, `id`, `title`,
   `direction`), for kind `dialect` the pack it was written against, the digest of each document it
-  holds, what it requires, its source kinds, licence, author, the assertion above, for kind `dialect`
-  its fixtures, and its verifications (none for a preset);
-- `dialect.json`: the dialect document (the input side), for direction `input` and `both`;
+  holds, for a document in a named format the document's `artifact` pair, what it requires, its
+  source kinds, licence, author, the assertion above, for kind `dialect` its fixtures, and its
+  verifications (none for a preset);
+- `dialect.json`: the dialect document (the input side), for direction `input` and `both`, in an
+  integer format of RFC 0018 or a named format of RFC 0021, whose `formatVersion`, `id` and
+  `version` the entry's reference and `artifact` repeat and the tests check against it;
 - `output.json`: the output dialect (RFC 0018 §10, the output side), for direction `output` and
   `both`; an entry of direction `both` holds the two documents, each with its own digest. Output
   fixtures are held by their digests only until the gateway publishes policy vectors;
@@ -41,15 +44,17 @@ A preset holds exactly `entry.json`, a version-3 `dialect.json` whose every bind
 unbound, and `README.md`. `manifest.json` at the root names every entry's `kind`, pins it by the
 SHA-256 of its `entry.json` and of each document it holds, `dialect.json` and `output.json`, and
 lists each fixture's files. Every `dialect.json` is held to its document form by the catalog's own
-form checker, written to RFC 0018's text.
-The format is written out in [`docs/entry-format.md`](docs/entry-format.md); what a release of a
-catalog is, and what a consumer verifies before it imports an entry, in
-[`docs/release-contract.md`](docs/release-contract.md); and how this repository cuts a release, in
-[`docs/releasing.md`](docs/releasing.md). The dialect's own
-format is [RFC 0018](https://github.com/Judgment-Pack/judgment-pack-spec/blob/main/rfcs/0018-dialect.md);
-the Exchange's design is recorded in
-[RFC 0019](https://github.com/Judgment-Pack/judgment-pack-spec/blob/main/rfcs/0019-exchange.md),
-a Draft, which defines the entry format (§3) and the release contract (§7) that these pages follow.
+form checker, written to the text of RFC 0018 and RFC 0021. An artifact pair is immutable across the
+catalog's history: the tests read every earlier release from the repository's tags and refuse other
+content under a pair any release published. The format is written out in
+[`docs/entry-format.md`](docs/entry-format.md); what a release of a catalog is, and what a consumer
+verifies before it imports an entry, in [`docs/release-contract.md`](docs/release-contract.md); and
+how this repository cuts a release, in [`docs/releasing.md`](docs/releasing.md). The dialect's own
+format is
+[RFC 0018](https://github.com/Judgment-Pack/judgment-pack-spec/blob/main/rfcs/0018-dialect.md); the
+Exchange's design is recorded in
+[RFC 0019](https://github.com/Judgment-Pack/judgment-pack-spec/blob/main/rfcs/0019-exchange.md), a
+Draft, which defines the entry format (§3) and the release contract (§7) that these pages follow.
 
 ## Contributing
 
@@ -68,8 +73,9 @@ See [`CONTRIBUTING.md`](CONTRIBUTING.md). In short:
 - commits are signed off under the Developer Certificate of Origin.
 
 To run the tests, check out the specification at the commit `ci.yml` pins into `.spec/` and run
-`python -m unittest discover -s tests -v`. Without `.spec/` the preparation-verifier test is
-skipped and says so.
+`python -m unittest discover -s tests -v` in a full clone with the repository's tags. Without
+`.spec/` the preparation-verifier test is skipped and says so; in a shallow clone, which may omit
+release history and tags, the artifact-history check refuses the release.
 
 ## Licence
 
