@@ -71,7 +71,7 @@ MAX_BINDING_BYTES = 65536
 OWNER_OR_NAME = re.compile(r"[A-Za-z0-9_.-]{1,100}")
 SEGMENT = re.compile(r"[A-Za-z0-9_.-]+")
 COMMIT = re.compile(r"[0-9a-f]{7,40}")
-READER = "Judgment-Pack/judgment-pack-spec/tools/dialect_verify.py@f821757fcaf5cb9831dbcb1f8b386a5ead793e4a"
+READER = "Judgment-Pack/judgment-pack-spec/tools/dialect_verify.py@18aef51aa66a012e96cf9395471109bd77e037db"
 ABSOLUTE_URI = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:[^\s]+")
 SKIPPED_DIRS = {".git", ".spec", ".venv", "node_modules", "__pycache__"}
 # The earlier releases of the example catalog the trees under tests/fixtures/ stand for, one directory
@@ -914,30 +914,37 @@ def load_verifier():
     return module
 
 
-# The verifier gives a version it does not read no name of its own: input-malformed, with this detail.
-VERSION_UNREAD = "a dialect version this reader does not read"
+def verifier_answer(result: subprocess.CompletedProcess) -> dict:
+    """The verifier's report (RFC 0018 §11: one object whose `result` is `reading`, `refusal` or `finding`) as
+    the catalog reads it: {"reading": {...}}, {"refused": name, "detail": ...} or {"finding": name, "detail": ...}.
+    The reason for a refusal or a finding is on the verifier's standard error; its exit status is 0 for a
+    reading, 1 for a refusal, 2 for a finding, and 3 when it could not run (and printed no report)."""
+    report = json.loads(result.stdout)
+    status = {"reading": 0, "refusal": 1, "finding": 2}.get(report.get("result"))
+    if status is None or status != result.returncode:
+        raise ValueError("the report and the exit status disagree")
+    detail = result.stderr.strip()
+    if report["result"] == "reading":
+        return {"reading": {k: v for k, v in report.items() if k != "result"}}
+    if report["result"] == "refusal":
+        return {"refused": report["refusal"], "detail": detail}
+    return {"finding": report["finding"], "detail": detail}
 
 
 def verifier_results(tree: Tree) -> list[tuple[str, str, str]]:
     """(label, "ok" | "skip" | "problem", message) for each fixture of each entry in the tree.
 
-    A fixture whose source kind the verifier defines and cannot recompute (`kind-unread`), or whose
-    dialect version it does not implement, is a skip naming the kind or the version: its digests
-    (rules 3 and 4) and the catalog's form checker still hold it. A fixture of a dialect with a
-    `research` source is refused instead, not skipped, until the pinned verifier reads RFC 0018's
-    round 8 (RFC 0019 §4). A preset has no fixtures, and the verifier is not used for it.
+    The verifier reads dialect versions 2 and 3, the source kinds `operation` and `research` (a research
+    source with the fixture's `sources.json` and, for an unbound source, its `binding.json`), and holds the
+    kinds `http`, `sql` and `web` to their forms and refuses them as `kind-unread`. A fixture it refuses as
+    `kind-unread`, or as `version-unread`, is a skip naming the kind or the version: its digests (rules 3
+    and 4), the catalog's form checker and its binding document still hold it. Any other refusal, and any
+    finding, is a failure. A preset has no fixtures, and the verifier is not used for it.
     """
     results: list[tuple[str, str, str]] = []
     for directory in tree.entry_dirs():
         path = directory.relative_to(tree.base).as_posix()
         entry = load_strict((directory / "entry.json").read_bytes())
-        research = False
-        if (directory / "dialect.json").is_file():
-            try:
-                document = load_strict((directory / "dialect.json").read_bytes())
-                research = any(isinstance(s, dict) and s.get("kind") == "research" for s in document.get("sources", []))
-            except (ValueError, AttributeError, TypeError):
-                pass  # the form checker refuses it (tree_problems)
         for fixture in entry.get("fixtures", []):
             label = f"{path}/{fixture['name']}"
             fixture_dir = directory / fixture["path"]
@@ -950,20 +957,20 @@ def verifier_results(tree: Tree) -> list[tuple[str, str, str]]:
             ]
             if (fixture_dir / "sources.json").is_file():
                 command += ["--acquisitions", str(fixture_dir / "sources.json")]
+            if (fixture_dir / BINDING).is_file():
+                command += ["--binding", str(fixture_dir / BINDING)]
             result = subprocess.run(command, capture_output=True, text=True, timeout=300)
             try:
-                answer = json.loads(result.stdout)
+                answer = verifier_answer(result)
             except ValueError:
                 results.append((label, "problem", "the verifier printed no answer"))
                 continue
             unread = None
             if answer.get("refused") == "kind-unread":
                 unread = f"the verifier cannot recompute a source of kind {', '.join(entry['sourceKinds'])} (kind-unread)"
-            elif answer.get("refused") == "input-malformed" and VERSION_UNREAD in answer.get("detail", ""):
-                unread = f"the verifier does not implement dialect version {entry['dialect']['dialectVersion']}"
-            if unread and research:
-                results.append((label, "problem", f"{unread}; a research source's fixture is refused, not skipped, until the pinned verifier reads RFC 0018's round 8 (RFC 0019 §4)"))
-            elif unread:
+            elif answer.get("refused") == "version-unread":
+                unread = f"the verifier does not implement dialect version {entry['dialect']['dialectVersion']} (version-unread)"
+            if unread:
                 results.append((label, "skip", f"{unread}; held by its digests only"))
             elif "reading" not in answer:
                 results.append((label, "problem", f"the verifier answered {json.dumps(answer, sort_keys=True)}"))
@@ -1322,6 +1329,38 @@ class ExampleEntry(unittest.TestCase):
         self.assertTrue(manifest_problems({}))
 
 
+class VerifierPin(unittest.TestCase):
+    """The specification commit the catalog's verifier is pinned at is named in three places, and they are one
+    commit: the `ref` CI checks the specification out at, the commit CONTRIBUTING.md has a contributor check
+    out, and the commit of `READER`, the locator an entry's verification record cites (exchange #14)."""
+
+    @staticmethod
+    def pins() -> dict[str, list[str]]:
+        workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+        contributing = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+        return {
+            "ci.yml": re.findall(r"repository: Judgment-Pack/judgment-pack-spec\s+ref: (\S+)", workflow),
+            "CONTRIBUTING.md": re.findall(r"git -C \.spec checkout (\S+)", contributing),
+            "READER": [READER.rpartition("@")[2]],
+        }
+
+    def test_each_place_names_one_full_commit(self):
+        for place, pins in self.pins().items():
+            with self.subTest(place):
+                self.assertEqual(len(pins), 1)
+                self.assertIsNotNone(re.fullmatch(r"[0-9a-f]{40}", pins[0]), pins[0])
+
+    def test_the_three_pins_are_one_commit(self):
+        pins = self.pins()
+        self.assertEqual(len({pin for found in pins.values() for pin in found}), 1, pins)
+
+    def test_the_checkout_under_spec_is_at_the_pin(self):
+        head = git(SPEC, "rev-parse", "HEAD") if (SPEC / ".git").exists() else None
+        if head is None:
+            self.skipTest(".spec/ is absent or not a git checkout")
+        self.assertEqual(head.decode().strip(), READER.rpartition("@")[2])
+
+
 class UnreadKindExample(unittest.TestCase):
     """A fixture of a kind the verifier does not read is a skip naming the kind, held by digests."""
 
@@ -1350,9 +1389,9 @@ class UnreadKindExample(unittest.TestCase):
 
 
 class UnreadVersionExample(unittest.TestCase):
-    """A version-3 dialect with a round-8 `research` source, unbound, its fixture carrying binding.json (RFC 0019 §3,
-    corrected under round 8). Its form, its classification and its binding document hold; its fixture is refused,
-    not skipped, until the pinned verifier reads round 8 (RFC 0019 §4)."""
+    """A version-3 dialect with a round-8 `research` source, unbound, its fixture carrying binding.json and the
+    research record in sources.json (RFC 0019 §3, corrected under round 8). Its form, its classification and its
+    binding document hold, and the pinned verifier, which reads round 8, replays its fixture (RFC 0019 §4)."""
 
     tree = Tree(EXAMPLE.parent / "unread-version-entry")
 
@@ -1365,23 +1404,26 @@ class UnreadVersionExample(unittest.TestCase):
         self.assertIn("binding.json", self.tree.manifest()[0]["fixtures"][0]["files"])
 
     @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
-    def test_its_fixture_is_refused_at_the_pinned_verifier(self):
-        # The pinned verifier reads neither version 3 nor a profile's research declaration: a refusal, a failure.
-        self.assertEqual([status for _, status, _ in verifier_results(self.tree)], ["problem"])
+    def test_its_fixture_is_replayed_by_the_pinned_verifier(self):
+        self.assertEqual([status for _, status, _ in verifier_results(self.tree)], ["ok"])
 
     @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
-    def test_a_research_fixture_is_refused_where_another_would_be_skipped(self):
-        # With profiles the pinned verifier reads, it answers with its unread-version detail, which skips a fixture
-        # of any other source kind (the unbound example); a fixture of a research source is refused instead.
+    def test_a_research_fixture_without_its_record_or_with_a_changed_one_is_a_failure(self):
         import tempfile
 
         with tempfile.TemporaryDirectory() as tmp:
             tree = scratch_tree(UNREAD_VERSION, tmp)
-            (tree.entry_dirs()[0] / "fixtures" / "valid" / "profiles.json").write_bytes(b"[]")
+            path = tree.entry_dirs()[0] / "fixtures" / "valid" / "sources.json"
+            record = path.read_bytes()
+            path.write_bytes(b"{}")
             results = verifier_results(tree)
             self.assertEqual([status for _, status, _ in results], ["problem"])
-            self.assertIn("does not implement dialect version 3", results[0][2])
-            self.assertIn("a research source's fixture is refused, not skipped", results[0][2])
+            self.assertIn("acquisition-missing", results[0][2])
+            # The answer's value changed: the preparation the reader computes is no longer the fixture's.
+            path.write_bytes(record.replace(b"A data export", b"A data deletion"))
+            results = verifier_results(tree)
+            self.assertEqual([status for _, status, _ in results], ["problem"])
+            self.assertIn("preparation-differs", results[0][2])
 
     @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
     def test_another_malformed_refusal_stays_a_failure(self):
@@ -1737,10 +1779,18 @@ class UnboundExample(unittest.TestCase):
         self.assertFalse(has_unbound_source(None))
 
     @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
-    def test_the_verifier_skips_it_naming_the_version(self):
-        results = verifier_results(self.tree)
-        self.assertEqual([status for _, status, _ in results], ["skip"])
-        self.assertIn("dialect version 3", results[0][2])
+    def test_the_verifier_replays_it_with_its_binding(self):
+        # The pinned verifier reads dialect version 3 and takes the fixture's binding document (RFC 0019 §4).
+        self.assertEqual([status for _, status, _ in verifier_results(self.tree)], ["ok"])
+
+    @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
+    def test_without_its_binding_the_replay_is_not_a_reading(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = scratch_tree(UNBOUND, tmp)
+            (tree.entry_dirs()[0] / "fixtures" / "valid" / BINDING).unlink()
+            self.assertEqual([status for _, status, _ in verifier_results(tree)], ["problem"])
 
 
 class ManifestForm(unittest.TestCase):
@@ -2449,21 +2499,21 @@ REFUSED_TREES = {
         'metadata-entry',
         [('member', 'verification')],
         [
-            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/tools/./dialect_verify.py@f821757fcaf5cb9831dbcb1f8b386a5ead793e4a' has an empty, '.' or '..' path segment",
+            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/tools/./dialect_verify.py@18aef51aa66a012e96cf9395471109bd77e037db' has an empty, '.' or '..' path segment",
         ],
     ),
     'verification-reader-empty-path': (
         'metadata-entry',
         [('member', 'verification')],
         [
-            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/@f821757fcaf5cb9831dbcb1f8b386a5ead793e4a' has no path",
+            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/@18aef51aa66a012e96cf9395471109bd77e037db' has no path",
         ],
     ),
     'verification-reader-segment-character': (
         'metadata-entry',
         [('member', 'verification')],
         [
-            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/tools/dialect+verify.py@f821757fcaf5cb9831dbcb1f8b386a5ead793e4a' has a path segment of a character outside [A-Za-z0-9_.-]",
+            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/tools/dialect+verify.py@18aef51aa66a012e96cf9395471109bd77e037db' has a path segment of a character outside [A-Za-z0-9_.-]",
         ],
     ),
     'verification-reader-without-commit': (

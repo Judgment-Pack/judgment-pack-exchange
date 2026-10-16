@@ -3,7 +3,7 @@
     "id": "example.fx-unbound",
     "kind": "dialect",
     "path": "entries/example/fx-unbound",
-    "entryDigest": "sha256:4675aea768a2fc4d5c120e9cadcdd112b2e1d31dbe58c4181ca117727c1d62ef",
+    "entryDigest": "sha256:0b4853e766ffc8a123cf6d4b6fd51dc98f05992ee2ff85e09a0876564494df6d",
     "dialectDigest": "sha256:8b9f8388886ef3ba2aeebe541d61c66cd85d12fabbe9c0cb891bab8a7b209f68",
     "fixtures": [
       {

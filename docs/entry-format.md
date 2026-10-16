@@ -376,15 +376,17 @@ settles any that it spells out.
   holds a release's own tag to the same function.
 - Every value of an output document's `policies` is held to the decision-policy form of RFC 0018 §10 and the gateway's `docs/design/engine-config.md` (`decisionPolicy`, at v0.15.0): a closed object, `outcomes` required, `packs`, `reviewed`, `bind`, `fix`, `closed` and `requireSignedRecord` optional and of the gateway's types, every `argument` and `fact` an RFC 6901 pointer.
 - The preparation verifier the tests run is `tools/dialect_verify.py` at the specification commit
-  `ci.yml` pins, `f821757`, which reads dialect version 2 and the source kind `operation`. After the
-  form checker passes, a fixture it refuses as `kind-unread` is skipped with a reason naming the
-  kind, and one of a dialect version it does not implement (its unread-version detail; version 3
-  today) is skipped with a reason naming the version; such a fixture is held by its digests, its
-  classification and its binding document only. A fixture of a dialect with a `research` source is
-  refused instead, not skipped: an entry with a round-8 research source cannot be published while
-  the readers refuse it, until the catalog pins a reader of round 8 (RFC 0019 §4). Any other
-  refusal, `input-malformed` included, is a failure. The pinned verifier takes no binding document,
-  so an unbound fixture is replayed only once the pin moves to a reader of version 3.
+  `ci.yml` pins, `18aef51`, a reader of rounds 8 and 9: dialect versions 2 and 3, the source kinds
+  `operation` and `research`, and the fixture's own `binding.json` for an unbound source (RFC 0019
+  §4). After the form checker passes, a fixture of a dialect with a research source or of version 3
+  is replayed by the verifier like any other: the test gives it the fixture's `sources.json` and
+  `binding.json` when it has them, and requires a reading whose digest is the `preparationDigest`.
+  A fixture it refuses as `kind-unread` (a source of kind `http`, `sql`, `web` or `selected-file`,
+  which it defines and does not read) or as `version-unread` is skipped with a reason naming the kind
+  or the version, and is held by its digests, its classification and its binding document only. Any
+  other refusal, `input-malformed` included, and any finding, is a failure. The specification commit
+  is named in `ci.yml`, in `CONTRIBUTING.md` and in the test's `READER` constant, and one test holds
+  the three equal.
 - For fixture replay, the catalog relies on the pinned verifier to hold `dialect.json`'s byte bound,
   and a skipped fixture establishes no verifier byte check; the catalog's form checker holds that
   bound for every `dialect.json` independently.

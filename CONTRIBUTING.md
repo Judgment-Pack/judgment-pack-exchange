@@ -56,7 +56,7 @@ CI runs the checks on Python 3.12, with the specification checked out at the com
 
 ```bash
 git clone https://github.com/Judgment-Pack/judgment-pack-spec.git .spec
-git -C .spec checkout f821757fcaf5cb9831dbcb1f8b386a5ead793e4a
+git -C .spec checkout 18aef51aa66a012e96cf9395471109bd77e037db
 python -m pip install -r requirements-dev.txt
 python -m unittest discover -s tests -v
 ```
