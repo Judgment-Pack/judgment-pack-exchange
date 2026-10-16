@@ -376,9 +376,12 @@ settles any that it spells out.
   holds a release's own tag to the same function.
 - Every value of an output document's `policies` is held to the decision-policy form of RFC 0018 §10 and the gateway's `docs/design/engine-config.md` (`decisionPolicy`, at v0.15.0): a closed object, `outcomes` required, `packs`, `reviewed`, `bind`, `fix`, `closed` and `requireSignedRecord` optional and of the gateway's types, every `argument` and `fact` an RFC 6901 pointer.
 - The preparation verifier the tests run is `tools/dialect_verify.py` at the specification commit
-  `ci.yml` pins, `18aef51`, a reader of rounds 8 and 9: dialect versions 2 and 3, the source kinds
-  `operation` and `research`, and the fixture's own `binding.json` for an unbound source (RFC 0019
-  §4). After the form checker passes, a fixture of a dialect with a research source or of version 3
+  `ci.yml` pins, `cae45ed`, a reader of rounds 8 to 11: dialect versions 2 and 3, the source kinds
+  `operation` and `research`, the name an unbound operation's `record` carries (round 10), and the
+  fixture's own `binding.json` for an unbound source (RFC 0019 §4). It also reads the named Dialect
+  artifact formats of RFC 0021 (`formatVersion` `"2.0.0"` or `"3.0.0"` with `id` and `version`),
+  which this entry format does not yet describe: `dialect.dialectVersion` is an integer equal to
+  the document's `version`, so the catalog's form checker refuses a document in a named format. After the form checker passes, a fixture of a dialect with a research source or of version 3
   is replayed by the verifier like any other: the test gives it the fixture's `sources.json` and
   `binding.json` when it has them, and requires a reading whose digest is the `preparationDigest`.
   A fixture it refuses as `kind-unread` (a source of kind `http`, `sql`, `web` or `selected-file`,
