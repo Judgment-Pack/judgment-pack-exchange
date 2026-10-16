@@ -1348,7 +1348,7 @@ class VerifierPin(unittest.TestCase):
         for place, pins in self.pins().items():
             with self.subTest(place):
                 self.assertEqual(len(pins), 1)
-                self.assertRegex(pins[0], r"[0-9a-f]{40}")
+                self.assertIsNotNone(re.fullmatch(r"[0-9a-f]{40}", pins[0]), pins[0])
 
     def test_the_three_pins_are_one_commit(self):
         pins = self.pins()
