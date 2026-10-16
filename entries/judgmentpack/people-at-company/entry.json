@@ -1,0 +1,21 @@
+{
+  "entryVersion": 3,
+  "kind": "preset",
+  "id": "judgmentpack.people-at-company",
+  "title": "People at a selected company",
+  "description": "Research public professional roles at one explicitly selected company.",
+  "direction": "input",
+  "dialect": {
+    "path": "dialect.json",
+    "dialectVersion": 3,
+    "digest": "sha256:80251eff848a72bb5c76d7f2df2329a4dd53c284a8e91927aa514e2a4d04b8d8"
+  },
+  "requires": {},
+  "sourceKinds": [
+    "research"
+  ],
+  "licence": "Apache-2.0",
+  "author": "Judgment Pack contributors",
+  "assertion": "The author asserts that these rules derive these facts and this evidence-availability from records of that shape, or these arguments from that disposition, and asserts nothing about any record's truth.",
+  "verification": []
+}
