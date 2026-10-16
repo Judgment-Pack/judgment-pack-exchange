@@ -1,0 +1,6 @@
+# Refused: named-dialect-changed
+
+**An example, not an entry.** This tree is `tests/fixtures/named-entry/` with one change: `dialect.json`'s content changed under the same `formatVersion`, `id` and `version`, and the manifest's `dialectDigest` follows its bytes; `dialect.digest` does not.
+`tests/test_entries.py` requires the format to refuse it with exactly the problems it lists for this
+tree, and requires the tree to pass once that change is reverted. Nothing here is published by the
+Exchange, and the repository root's `manifest.json` does not list it.

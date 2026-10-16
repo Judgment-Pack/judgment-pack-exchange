@@ -10,8 +10,9 @@ files:
 
 - `entry.json`, the closed record of what the entry is, its kind, who wrote it, its licence, and the
   sentence its author asserts;
-- `dialect.json`, the dialect document in RFC 0018's format, for an entry of direction `input` or
-  `both`;
+- `dialect.json`, the dialect document in an integer format of RFC 0018 or a named format of RFC
+  0021, for an entry of direction `input` or `both`; for a named format, `entry.json` carries the
+  document's `artifact` pair, which no later release may publish with other content;
 - `output.json`, the output dialect in RFC 0018 §10's form, for an entry of direction `output` or
   `both`; output fixtures are held by their digests only until the gateway publishes policy vectors;
 - `fixtures/<name>/`, for kind `dialect`, the recorded source records of each fixture and

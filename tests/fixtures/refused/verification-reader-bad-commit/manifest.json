@@ -3,7 +3,7 @@
     "id": "example.fx-metadata",
     "kind": "dialect",
     "path": "entries/example/fx-metadata",
-    "entryDigest": "sha256:30374356e98e39978af3bb03f51ac14604b2f35893a0894312a913065fb41526",
+    "entryDigest": "sha256:3beec6ca3f0ed1c1deeed8d1fe7a01c0f8c4285f757eb8c8653057f623981044",
     "dialectDigest": "sha256:d960dcd2423a07a478ee7defc4649072903141e99c39201466e58ec52d73efbe",
     "fixtures": [
       {

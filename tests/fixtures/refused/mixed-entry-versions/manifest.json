@@ -1,0 +1,38 @@
+[
+  {
+    "id": "example.fx-named",
+    "kind": "dialect",
+    "path": "entries/example/fx-named",
+    "entryDigest": "sha256:ae2da942027d033f1646582e9042238f18c39061aa726c0f71eccacac149769a",
+    "dialectDigest": "sha256:8d874f38a514469de0b584273afb8f7a4820a01e9a5a58af7a5dec10c4bcdbf8",
+    "fixtures": [
+      {
+        "name": "valid",
+        "files": [
+          "case.json",
+          "preparation.json",
+          "profiles.json",
+          "sources.json"
+        ]
+      }
+    ]
+  },
+  {
+    "id": "example.fx-named-copy",
+    "kind": "dialect",
+    "path": "entries/example/fx-named-copy",
+    "entryDigest": "sha256:68dedf81113652a1e20272354f48f276bac962c8f5aa76625c15d2a7ae66b08e",
+    "dialectDigest": "sha256:8d874f38a514469de0b584273afb8f7a4820a01e9a5a58af7a5dec10c4bcdbf8",
+    "fixtures": [
+      {
+        "name": "valid",
+        "files": [
+          "case.json",
+          "preparation.json",
+          "profiles.json",
+          "sources.json"
+        ]
+      }
+    ]
+  }
+]

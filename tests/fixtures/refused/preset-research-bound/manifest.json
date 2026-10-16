@@ -3,7 +3,7 @@
     "id": "example.company-research",
     "kind": "preset",
     "path": "entries/example/company-research",
-    "entryDigest": "sha256:cd39509915486fe60d4760d0749e4ed727cd3026238bd44dbf58ee6f32cca398",
+    "entryDigest": "sha256:17fc137f45434857473db8aba2fc3bea1a6868163f394874289cb8d2f597b498",
     "dialectDigest": "sha256:7269352e345199e0df981d9535c7a7b07d9775086b3703741952d60ee792d682",
     "fixtures": []
   }

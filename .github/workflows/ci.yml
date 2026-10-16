@@ -14,7 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       # Every commit and tag: an entry's `upgrade` keys are checked against the manifests of the
-      # catalog's earlier releases, read from its tags (RFC 0019 §3; docs/entry-format.md).
+      # catalog's earlier releases, and every artifact pair against the entries those manifests pin,
+      # read from its tags (RFC 0019 §§3, 7; docs/entry-format.md). A shallow clone lists no tags,
+      # and the tests refuse it as artifact-history-invalid rather than check by form alone.
       - name: Check out the repository with its tags
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -25,7 +27,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: Judgment-Pack/judgment-pack-spec
-          ref: cae45edb94e57c9505813d2e64820342d6bd2ef5
+          ref: 8371cdb8f3f791f1a826b609da0d102a1c93ae6c
           path: .spec
           persist-credentials: false
 

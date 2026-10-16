@@ -1,5 +1,5 @@
 {
-  "entryVersion": 2,
+  "entryVersion": 3,
   "kind": "dialect",
   "id": "example.fx-metadata",
   "title": "Example: currency conversion with authoring metadata",
@@ -43,7 +43,7 @@
       "runner": "v0.011.0",
       "runtime": "v0.32.0",
       "readers": [
-        "Judgment-Pack/judgment-pack-spec/tools/dialect_verify.py@cae45edb94e57c9505813d2e64820342d6bd2ef5"
+        "Judgment-Pack/judgment-pack-spec/tools/dialect_verify.py@8371cdb8f3f791f1a826b609da0d102a1c93ae6c"
       ],
       "result": "agree"
     }

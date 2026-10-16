@@ -2,9 +2,12 @@
 
 Standard library only. The repository's own tree (entries/ and manifest.json) is held to every
 rule; the examples under tests/fixtures/ are trees of the same shape, so the rules that need an
-entry are exercised while the Exchange holds none. Entry format version 2 (RFC 0019 §3, as revised
-by judgment-pack-spec#178): every entry has a `kind`, `dialect` or `preset`, and every dialect
-document is held to its form by the catalog's own form checker (tests/dialect_form.py).
+entry are exercised while the Exchange holds none. Entry format version 3 (RFC 0019 §3, as revised
+by judgment-pack-spec#193): every entry has a `kind`, `dialect` or `preset`; an entry for a named-format
+document (RFC 0021) references it by `formatVersion` and carries its `artifact` pair, checked against the
+document; every dialect document is held to its form by the catalog's own form checker
+(tests/dialect_form.py); and the artifact pairs are held immutable within the release and across the
+catalog's earlier releases, read from its tags.
 """
 
 from __future__ import annotations
@@ -39,8 +42,8 @@ DIGEST = re.compile(r"sha256:[0-9a-f]{64}")
 ID = re.compile(r"[a-z0-9]+(\.[a-z0-9-]+)+")
 PLATFORM = re.compile(r"[a-z][a-z0-9-]*")
 FIXTURE_NAME = re.compile(r"[a-z0-9]+(-[a-z0-9]+)*")
-# RFC 0019 §3: entry format version 2, whose entries have a kind.
-ENTRY_VERSION = 2
+# RFC 0019 §3: entry format version 3, whose entries have a kind and, for a named-format document, an artifact.
+ENTRY_VERSION = 3
 ENTRY_KINDS = ("dialect", "preset")
 # A preset's directory holds exactly these files (RFC 0019 §3).
 PRESET_FILES = ("README.md", "dialect.json", "entry.json")
@@ -55,6 +58,11 @@ LICENCE = re.compile(r"LicenseRef-[A-Za-z0-9.-]+|[A-Za-z0-9][A-Za-z0-9.+-]*")
 # RFC 0018 §4: the kinds of each dialect version (version 3 adds to version 2; later versions are read as 3).
 KINDS_V2 = {"operation", "selected-file"}
 KINDS_V3 = KINDS_V2 | {"http", "sql", "web", "research"}
+# RFC 0021 (spec/dialect.md §2.1) and RFC 0019 §3: a named format's exact selectors, the family each selects, and
+# an artifact's version, Core's three-component grammar in ASCII digits with no leading zero and no suffix.
+SELECTORS = {"2.0.0": 2, "3.0.0": 3}
+ARTIFACT_VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
+MAX_ARTIFACT_ID_BYTES = 1024
 MAX_TEXT_FILE = 64 * 1024
 MAX_FIXTURE_DIR = 16 * 1024 * 1024
 MAX_MANIFEST_BYTES = 1024 * 1024
@@ -71,7 +79,7 @@ MAX_BINDING_BYTES = 65536
 OWNER_OR_NAME = re.compile(r"[A-Za-z0-9_.-]{1,100}")
 SEGMENT = re.compile(r"[A-Za-z0-9_.-]+")
 COMMIT = re.compile(r"[0-9a-f]{7,40}")
-READER = "Judgment-Pack/judgment-pack-spec/tools/dialect_verify.py@cae45edb94e57c9505813d2e64820342d6bd2ef5"
+READER = "Judgment-Pack/judgment-pack-spec/tools/dialect_verify.py@8371cdb8f3f791f1a826b609da0d102a1c93ae6c"
 ABSOLUTE_URI = re.compile(r"[A-Za-z][A-Za-z0-9+.-]*:[^\s]+")
 SKIPPED_DIRS = {".git", ".spec", ".venv", "node_modules", "__pycache__"}
 # The earlier releases of the example catalog the trees under tests/fixtures/ stand for, one directory
@@ -125,21 +133,32 @@ class Tree:
     """A manifest and the entries under it: the repository's, or an example's.
 
     `releases` gives the catalog's earlier releases for the upgrade-key check, `[(tag, manifest bytes)]`
-    in tag order, or None when they cannot be read; it is called only for an entry with `upgrade`. The
-    repository's tree reads them from its git tags; an example's are the example catalog's, under
-    tests/fixtures/releases/.
+    in tag order, or None when they cannot be read; it is called only for an entry with `upgrade`.
+    `history` gives the same releases for the artifact-history check, `[Release]` in tag order, or None
+    when they cannot be read; it is called for every tree. The repository's tree reads both from its git
+    tags. An example's are the example catalog's, under tests/fixtures/releases/, unless the example
+    holds its own under releases/<tag>/ beside its manifest.
     """
 
-    def __init__(self, base: Path, releases=None):
+    def __init__(self, base: Path, releases=None, history=None):
         self.base = base
         self.manifest_path = base / "manifest.json"
-        self._releases = example_releases if releases is None else releases
+        own = base / "releases"
+        held = own if own.is_dir() and not own.is_symlink() else EXAMPLE_RELEASES
+        self._releases = directory_releases(held) if releases is None else releases
+        self._history = directory_history(held) if history is None else history
         self._read = None
+        self._history_read = None
 
     def releases(self):
         if self._read is None:
             self._read = (self._releases(),)
         return self._read[0]
+
+    def history(self):
+        if self._history_read is None:
+            self._history_read = (self._history(),)
+        return self._history_read[0]
 
     def manifest(self):
         return read_manifest(self.manifest_path)
@@ -184,22 +203,27 @@ def entry_path(entry_id: str) -> str:
     return f"entries/{publisher}/{name}"
 
 
-def manifest_problems(manifest) -> list[str]:
-    """The manifest's form (RFC 0019 §3): at most 1,024 closed rows, distinct ids in byte order."""
+def manifest_problems(manifest, historical: bool = False) -> list[str]:
+    """The manifest's form (RFC 0019 §3): at most 1,024 closed rows, distinct ids in byte order. The row form
+    is unchanged from entry format version 2. An earlier release's manifest, `historical`, is read in its own
+    row form (RFC 0019 §7): version 1's rows, which have no `kind`, when none of its rows has one."""
     if not isinstance(manifest, list):
         return ["manifest: not an array"]
     if len(manifest) > MAX_MANIFEST_ROWS:
         return [f"manifest: {len(manifest)} rows, more than 1,024"]
+    version_1 = historical and all(isinstance(row, dict) and "kind" not in row for row in manifest)
+    required = {"id", "path", "entryDigest", "fixtures"} | (set() if version_1 else {"kind"})
     problems = []
     for i, row in enumerate(manifest):
         where = f"manifest[{i}]"
-        bad = closed(row, {"id", "kind", "path", "entryDigest", "fixtures"}, {"dialectDigest", "outputDigest"}, where)
+        bad = closed(row, required, {"dialectDigest", "outputDigest"}, where)
         problems += bad
         if bad:
             continue
-        if row["kind"] not in ENTRY_KINDS:
+        kind = row.get("kind")
+        if not version_1 and kind not in ENTRY_KINDS:
             problems.append(f"{where}: kind is not dialect or preset")
-        elif row["kind"] == "preset":
+        elif kind == "preset":
             if row["fixtures"] != []:
                 problems.append(f"{where}: a preset row's fixtures is not the empty array")
             if "outputDigest" in row:
@@ -351,18 +375,153 @@ def date_ok(v) -> bool:
     return True
 
 
-def entry_problems(entry, directory_id: str, document_version=None, output_document_version=None) -> list[str]:
-    """The entry format's types and bounds (docs/entry-format.md), version 2. Every object is closed.
+def reference_form_problem(reference, preset: bool) -> str | None:
+    """RFC 0019 §3, `dialect-reference-form`: the reference is a closed object, exactly `{path, dialectVersion,
+    digest}` for an integer-format document or `{path, formatVersion, digest}` for a named one; `path` is
+    `dialect.json` and `digest` a sha256 digest; `dialectVersion` an integer of 2 or more and `formatVersion`
+    exactly "2.0.0" or "3.0.0"; and a preset admits only the integer form, with `dialectVersion` exactly 3."""
+    if not isinstance(reference, dict):
+        return "dialect is not an object"
+    selectors = [name for name in ("dialectVersion", "formatVersion") if name in reference]
+    if len(selectors) == 2:
+        return "dialect has both dialectVersion and formatVersion"
+    if not selectors:
+        return "dialect has neither dialectVersion nor formatVersion"
+    selector = selectors[0]
+    for name in sorted({"path", "digest"} - reference.keys()):
+        return f"dialect has no member {name}"
+    for name in sorted(reference.keys() - {"path", "digest", selector}):
+        return f"dialect has the member {name}, which its form does not list"
+    if reference["path"] != "dialect.json":
+        return "dialect.path is not dialect.json"
+    if not digest_ok(reference["digest"]):
+        return "dialect.digest is not a sha256 digest"
+    value = reference[selector]
+    if selector == "formatVersion":
+        if preset:
+            return "a preset admits only the integer form, dialectVersion 3, and no formatVersion"
+        if not (isinstance(value, str) and value in SELECTORS):
+            return f'formatVersion {value!r} is not exactly "2.0.0" or "3.0.0"'
+    elif not is_int(value) or value < 2:
+        return f"dialectVersion {value!r} is not an integer of 2 or more"
+    elif preset and value != 3:
+        return f"a preset's dialectVersion is exactly 3, not {value}"
+    return None
 
-    A reader of version 2 refuses any other entry format version, version 1 included, before it reads
-    the entry's other members: their closed form is another one."""
+
+def artifact_form_problem(artifact) -> str | None:
+    """RFC 0019 §3, `artifact-malformed`: a closed object of exactly `id` and `version`; `id` a non-empty string of
+    at most 1024 UTF-8 bytes with no ASCII control character, space or DEL; `version` Core's three-component
+    grammar in its entirety, ASCII digits with no leading zero, no suffix, and a string, never a number."""
+    if not isinstance(artifact, dict):
+        return "artifact is not an object"
+    for name in sorted({"id", "version"} - artifact.keys()):
+        return f"artifact has no member {name}"
+    for name in sorted(artifact.keys() - {"id", "version"}):
+        return f"artifact has the member {name}, which its form does not list"
+    identity, version = artifact["id"], artifact["version"]
+    if not isinstance(identity, str):
+        return "artifact.id is not a string"
+    if identity == "":
+        return "artifact.id is empty"
+    try:
+        size = len(identity.encode("utf-8"))
+    except UnicodeEncodeError:
+        return "artifact.id is not well-formed Unicode"
+    if size > MAX_ARTIFACT_ID_BYTES:
+        return f"artifact.id is {size} UTF-8 bytes, over 1024"
+    if any(ord(character) <= 0x20 or ord(character) == 0x7F for character in identity):
+        return "artifact.id holds an ASCII control character, a space or DEL"
+    if not isinstance(version, str):
+        return f"artifact.version {version!r} is not a string"
+    if ARTIFACT_VERSION.fullmatch(version) is None:
+        return f"artifact.version {version!r} is not MAJOR.MINOR.PATCH in ASCII digits, with no leading zero and no suffix"
+    return None
+
+
+def reference_refusal(entry: dict, document=None) -> tuple[str, str] | None:
+    """RFC 0019 §3, "Reference refusals": the first that applies, in the text's order — the reference's form, then
+    a format mismatch, then the artifact checks (required, forbidden, malformed, mismatch), then the digest — as
+    `(code, detail)`, or None. The selector, the artifact pair and the canonical digest are read from the whole
+    document and checked against it, never taken from the entry alone. `document` is the dialect document as
+    read, or None when it is not given or cannot be read: the checks that compare with it are then not made."""
+    kind = entry.get("kind")
+    preset = kind == "preset"
+    reference = entry.get("dialect")
+    named = None
+    if "dialect" in entry:
+        form = reference_form_problem(reference, preset)
+        if form:
+            return "dialect-reference-form", form
+        named = "formatVersion" in reference
+    known = isinstance(document, dict)
+    if named is not None and known:
+        named_document = "formatVersion" in document
+        if named and not named_document:
+            return "dialect-format-mismatch", f"a named reference, formatVersion {reference['formatVersion']!r}, with an integer-format document"
+        if not named and named_document:
+            return "dialect-format-mismatch", f"an integer reference, dialectVersion {reference['dialectVersion']}, with a named-format document, formatVersion {document['formatVersion']!r}"
+        if named and document["formatVersion"] != reference["formatVersion"]:
+            return "dialect-format-mismatch", f"formatVersion {reference['formatVersion']!r} is not the document's, {document['formatVersion']!r}"
+        if not named and not (is_int(document.get("version")) and document["version"] == reference["dialectVersion"]):
+            return "dialect-format-mismatch", f"dialectVersion {reference['dialectVersion']} is not the document's version, {document.get('version')!r}"
+    artifact = "artifact" in entry
+    if named and kind == "dialect" and not artifact:
+        return "artifact-required", "an entry for a named-format input document carries artifact, the document's id and version"
+    if artifact:
+        if preset:
+            return "artifact-forbidden", "a preset carries no artifact"
+        if entry.get("direction") == "output":
+            return "artifact-forbidden", "an output-only entry carries no artifact"
+        if named is False:
+            return "artifact-forbidden", "an entry for an integer-format document carries no artifact"
+        malformed = artifact_form_problem(entry["artifact"])
+        if malformed:
+            return "artifact-malformed", malformed
+        if named and known:
+            for member in ("id", "version"):
+                if entry["artifact"][member] != document.get(member):
+                    return "artifact-mismatch", f"artifact.{member} {entry['artifact'][member]!r} is not the document's {member}, {document.get(member)!r}"
+    if named is not None and known:
+        try:
+            canonical = digest(canon(document))
+        except ValueError:
+            canonical = None  # outside the canon domain, which the form checker refuses
+        if canonical is not None and canonical != reference["digest"]:
+            whole = ", identity members included" if named else ""
+            return "dialect-digest-mismatch", f"dialect.digest is not the digest of dialect.json's canonical bytes{whole}"
+    return None
+
+
+def dialect_family(reference, document) -> tuple[int, str] | None:
+    """The translation family whose source kinds an entry's `sourceKinds` names (RFC 0019 §3): the document's,
+    when it is given, else the reference's. A named selector "2.0.0" selects version 2's kinds and "3.0.0"
+    version 3's; an integer version above 3 is read with version 3's list."""
+    holder, member = (document, "version") if isinstance(document, dict) else (reference, "dialectVersion")
+    if not isinstance(holder, dict):
+        return None
+    selector = holder.get("formatVersion")
+    if isinstance(selector, str) and selector in SELECTORS:
+        return SELECTORS[selector], f"the family formatVersion {selector!r} selects"
+    version = holder.get(member)
+    if "formatVersion" not in holder and is_int(version) and version >= 2:
+        return (2 if version == 2 else 3), f"dialect version {version}"
+    return None
+
+
+def entry_problems(entry, directory_id: str, document=None, output_document_version=None) -> list[str]:
+    """The entry format's types and bounds (docs/entry-format.md), version 3. Every object is closed.
+    `document` is the entry's dialect document as read, or None when it is not given (reference_refusal).
+
+    A reader of version 3 refuses any other entry format version, versions 1 and 2 included, before it reads
+    the entry's other members: their closed forms are other ones (`entry-version-unread`)."""
     if isinstance(entry, dict) and not (is_int(entry.get("entryVersion")) and entry["entryVersion"] == ENTRY_VERSION):
-        return [f"entry: entryVersion {entry.get('entryVersion')!r} is not 2; a version-2 reader refuses any other entry format version"]
+        return [f"entry-version-unread: entryVersion {entry.get('entryVersion')!r} is not 3; a version-3 reader refuses versions 1 and 2"]
     required = {
         "entryVersion", "kind", "id", "title", "direction", "requires", "sourceKinds",
         "licence", "author", "assertion", "verification",
     }
-    optional = {"pack", "fixtures", "dialect", "output", "description", "compatibility", "upgrade"}
+    optional = {"pack", "fixtures", "dialect", "artifact", "output", "description", "compatibility", "upgrade"}
     problems = closed(entry, required, optional, "entry")
     if problems:
         return problems
@@ -371,8 +530,8 @@ def entry_problems(entry, directory_id: str, document_version=None, output_docum
     if kind not in ENTRY_KINDS:
         problems.append("entry: kind is not dialect or preset")
     elif preset:
-        # RFC 0019 §3: a preset has direction input, no pack and no fixtures, an empty verification, a
-        # dialect of version 3 and no profile in requires.
+        # RFC 0019 §3: a preset has direction input, no pack and no fixtures, an empty verification and no
+        # profile in requires; its reference's integer form, dialectVersion 3, is held by reference_refusal.
         for name in ("pack", "fixtures"):
             if name in entry:
                 problems.append(f"entry: a preset has no {name}")
@@ -380,8 +539,6 @@ def entry_problems(entry, directory_id: str, document_version=None, output_docum
             problems.append(f"entry: a preset's direction is input, not {entry['direction']!r}")
         if entry["verification"] != []:
             problems.append("entry: a preset's verification is the empty array")
-        if isinstance(entry.get("dialect"), dict) and entry["dialect"].get("dialectVersion") != 3:
-            problems.append("dialect: a preset's dialectVersion is 3")
         if isinstance(entry["requires"], dict):
             for name in ("inputProfile", "connectionProfile"):
                 if name in entry["requires"]:
@@ -465,23 +622,11 @@ def entry_problems(entry, directory_id: str, document_version=None, output_docum
         if has_output != ("output" in entry):
             problems.append(f"entry: output is {'required' if has_output else 'absent'} for direction {direction}")
 
-    version = None
-    dialect = entry.get("dialect")
-    if "dialect" not in entry:
-        pass
-    elif isinstance(dialect, dict):
-        problems += closed(dialect, {"path", "dialectVersion", "digest"}, set(), "dialect")
-        if dialect.get("path") != "dialect.json":
-            problems.append("dialect: path is not dialect.json")
-        version = dialect.get("dialectVersion")
-        if not is_int(version) or version < 2:
-            problems.append("dialect: dialectVersion is not an integer of at least 2")
-        elif document_version is not None and version != document_version:
-            problems.append("dialect: dialectVersion is not the document's own version")
-        if not digest_ok(dialect.get("digest")):
-            problems.append("dialect: digest is not a sha256 digest")
-    else:
-        problems.append("dialect: not an object")
+    # RFC 0019 §3: the dialect reference and the artifact pair against the document, the first refusal that
+    # applies in the text's order.
+    refusal = reference_refusal(entry, document)
+    if refusal:
+        problems.append(f"{refusal[0]}: {refusal[1]}")
 
     output = entry.get("output")
     if "output" not in entry:
@@ -522,11 +667,12 @@ def entry_problems(entry, directory_id: str, document_version=None, output_docum
     else:
         if len(set(kinds)) != len(kinds):
             problems.append("entry: sourceKinds names a kind twice")
-        if is_int(version) and version >= 2:
-            listed = KINDS_V2 if version == 2 else KINDS_V3
+        family = dialect_family(entry.get("dialect"), document)
+        if family is not None:
+            listed = KINDS_V2 if family[0] == 2 else KINDS_V3
             for kind in kinds:
                 if kind not in listed:
-                    problems.append(f"entry: sourceKinds names {kind}, not a kind of dialect version {version}")
+                    problems.append(f"entry: sourceKinds names {kind}, not a kind of {family[1]}")
 
     fixtures = entry.get("fixtures")
     if "fixtures" not in entry or preset:
@@ -618,6 +764,7 @@ def tree_problems(tree: Tree) -> list[str]:
         problems.append(f"{path}: listed in the manifest, no such entry")
     for path in sorted(dirs.keys() & by_path.keys()):
         problems += directory_problems(dirs[path], path, by_path[path], tree.releases)
+    problems += artifact_problems(tree, sorted(dirs.keys() & by_path.keys()))
     return problems
 
 
@@ -703,7 +850,7 @@ def directory_problems(directory: Path, path: str, row: dict, releases=None) -> 
         "dialect": ("dialect.json", "dialectDigest", direction in ("input", "both")),
         "output": ("output.json", "outputDigest", direction in ("output", "both")),
     }
-    canonical = {}
+    read = {}
     form_refused = False
     for key, (name, column, wanted) in documents.items():
         present = (directory / name).is_file()
@@ -725,15 +872,14 @@ def directory_problems(directory: Path, path: str, row: dict, releases=None) -> 
                 problems.append(f"{path}: dialect.json is refused by the catalog's form checker, {refusal[0]}: {refusal[1]}")
                 form_refused = True
         try:
-            canonical[key] = (load_strict(data), digest(canon(load_strict(data))))
+            read[key] = load_strict(data)
+            if key == "output":
+                read["output canon"] = digest(canon(read[key]))
         except ValueError as error:
             problems.append(f"{path}: {name}: {error}")
-    document_version = None
-    if "dialect" in canonical and isinstance(canonical["dialect"][0], dict):
-        document_version = canonical["dialect"][0].get("version")
     output_version = None
-    if "output" in canonical:
-        document = canonical["output"][0]
+    if "output canon" in read:
+        document = read["output"]
         if not isinstance(document, dict) or set(document) != {"outputVersion", "platform", "policies"}:
             problems.append(f"{path}: output.json is not a closed object of outputVersion, platform and policies")
         elif not (isinstance(document["platform"], str) and document["platform"] and isinstance(document["policies"], dict)):
@@ -744,22 +890,21 @@ def directory_problems(directory: Path, path: str, row: dict, releases=None) -> 
             problems.append(f"{path}: output.json: outputVersion is not the string \"1\"")
         else:
             output_version = 1
-    shape = entry_problems(entry, expected_id, document_version, output_version)
+    shape = entry_problems(entry, expected_id, read.get("dialect"), output_version)
     problems += [f"{path}: {p}" for p in shape]
     if shape:
         return problems
     if row.get("kind") in ENTRY_KINDS and row["kind"] != entry["kind"]:
         problems.append(f"{path}: the manifest's kind {row['kind']} is not entry.json's kind {entry['kind']}")
     # What the dialect's sources are is read only from a document whose form holds.
-    document = None if form_refused else canonical.get("dialect", (None,))[0]
+    document = None if form_refused else read.get("dialect")
     if entry["kind"] == "preset":
         problems += [f"{path}: {p}" for p in preset_problems(directory, document)]
     problems += [f"{path}: {p}" for p in source_kind_problems(entry, document)]
     problems += [f"{path}: {p}" for p in upgrade_history_problems(entry, releases)]
     problems += [f"{path}: {p}" for p in size_problems(directory, entry)]
-    if "dialect" in canonical and canonical["dialect"][1] != entry["dialect"]["digest"]:
-        problems.append(f"{path}: dialect.digest is not the digest of dialect.json's canonical bytes")
-    if "output" in canonical and canonical["output"][1] != entry["output"]["digest"]:
+    # dialect.digest is held with the reference (reference_refusal, dialect-digest-mismatch).
+    if "output canon" in read and read["output canon"] != entry["output"]["digest"]:
         problems.append(f"{path}: output.digest is not the digest of output.json's canonical bytes")
     for fixture in entry.get("fixtures", []):
         prep = directory / fixture["path"] / "preparation.json"
@@ -773,7 +918,8 @@ def directory_problems(directory: Path, path: str, row: dict, releases=None) -> 
 
 def preset_problems(directory: Path, document) -> list[str]:
     """RFC 0019 §3: a preset's directory holds exactly entry.json, dialect.json and README.md, and every
-    source of its dialect that has an unbound form under RFC 0018 §4.4 is unbound."""
+    source of its dialect that has an unbound form under RFC 0018 §4.4 is unbound; a bound one is refused as
+    `bound-derivative`."""
     problems = []
     for item in sorted(directory.iterdir()):
         if item.name not in PRESET_FILES or item.is_symlink() or not item.is_file():
@@ -781,7 +927,7 @@ def preset_problems(directory: Path, document) -> list[str]:
     sources = document.get("sources", []) if isinstance(document, dict) else []
     for source in sources:
         if dialect_form.classification(source) == "bound":
-            problems.append(f"a preset's source {source['name']!r} is bound: every source with an unbound form is unbound")
+            problems.append(f"bound-derivative: a preset's source {source['name']!r} is bound: every source with an unbound form is unbound")
     return problems
 
 
@@ -934,9 +1080,10 @@ def verifier_answer(result: subprocess.CompletedProcess) -> dict:
 def verifier_results(tree: Tree) -> list[tuple[str, str, str]]:
     """(label, "ok" | "skip" | "problem", message) for each fixture of each entry in the tree.
 
-    The verifier reads dialect versions 2 and 3, the source kinds `operation` and `research` (a research
-    source with the fixture's `sources.json` and, for an unbound source, its `binding.json`), and holds the
-    kinds `http`, `sql` and `web` to their forms and refuses them as `kind-unread`. A fixture it refuses as
+    The verifier reads dialect versions 2 and 3 and the named formats "2.0.0" and "3.0.0" (RFC 0021), the
+    source kinds `operation` and `research` (a research source with the fixture's `sources.json` and, for an
+    unbound source, its `binding.json`), and holds the kinds `http`, `sql` and `web` to their forms and
+    refuses them as `kind-unread`. A fixture it refuses as
     `kind-unread`, or as `version-unread`, is a skip naming the kind or the version: its digests (rules 3
     and 4), the catalog's form checker and its binding document still hold it. Any other refusal, and any
     finding, is a failure. A preset has no fixtures, and the verifier is not used for it.
@@ -969,7 +1116,9 @@ def verifier_results(tree: Tree) -> list[tuple[str, str, str]]:
             if answer.get("refused") == "kind-unread":
                 unread = f"the verifier cannot recompute a source of kind {', '.join(entry['sourceKinds'])} (kind-unread)"
             elif answer.get("refused") == "version-unread":
-                unread = f"the verifier does not implement dialect version {entry['dialect']['dialectVersion']} (version-unread)"
+                reference = entry["dialect"]
+                version = f"format {reference['formatVersion']}" if "formatVersion" in reference else f"version {reference.get('dialectVersion')}"
+                unread = f"the verifier does not implement dialect {version} (version-unread)"
             if unread:
                 results.append((label, "skip", f"{unread}; held by its digests only"))
             elif "reading" not in answer:
@@ -1007,12 +1156,16 @@ def release_being_made(environment=os.environ) -> str | None:
     return tag if tag is not None and release_tag_ok(tag) else None
 
 
-def catalog_releases(repo: Path, below: str | None = None):
+def release_commits(repo: Path, below: str | None = None) -> list[tuple[str, str]] | None:
     """The catalog's releases lower in tag order than `below` (all of them when None), in tag order, as
-    `[(tag, manifest.json's blob at the tag's commit, or None)]`; None when the tags cannot be read.
+    `[(tag, the commit it resolves to)]`; None when the tag listing cannot be read.
 
     A release is a tag in the release-tag grammar resolved to a commit, an annotated tag peeled; a tag
-    that resolves to no commit is no release. The manifest is read as the commit's blob."""
+    that resolves to no commit is no release. A shallow clone's listing is not a reading of the catalog's
+    tags (a clone made with a depth fetches none of them), so it is a listing that cannot be read."""
+    shallow = git(repo, "rev-parse", "--is-shallow-repository")
+    if shallow is None or shallow.strip() != b"false":
+        return None
     listing = git(repo, "tag", "--list")
     if listing is None:
         return None
@@ -1024,23 +1177,107 @@ def catalog_releases(repo: Path, below: str | None = None):
         commit = git(repo, "rev-parse", "--verify", "--quiet", f"refs/tags/{tag}^{{commit}}")
         if commit is None:
             continue
-        releases.append((tag, git(repo, "cat-file", "blob", f"{commit.decode('ascii').strip()}:manifest.json")))
+        releases.append((tag, commit.decode("ascii").strip()))
     return releases
+
+
+def catalog_releases(repo: Path, below: str | None = None):
+    """The catalog's releases lower in tag order than `below` (all of them when None), in tag order, as
+    `[(tag, manifest.json's blob at the tag's commit, or None)]`; None when the tags cannot be read
+    (release_commits). The manifest is read as the commit's blob."""
+    commits = release_commits(repo, below)
+    if commits is None:
+        return None
+    return [(tag, git(repo, "cat-file", "blob", f"{commit}:manifest.json")) for tag, commit in commits]
+
+
+class HistoryInvalid(Exception):
+    """An earlier release that cannot be read as the artifact-history check reads one (RFC 0019 §7)."""
+
+
+class Release:
+    """One earlier release for the artifact-history check: its tag, and its files read as the blobs at its
+    commit. `read(path, limit)` returns a blob's bytes, or None when the commit holds no blob at that path,
+    and refuses a blob over `limit` bytes before reading it."""
+
+    def __init__(self, tag: str, read):
+        self.tag = tag
+        self.read = read
+
+
+def git_reader(repo: Path, commit: str):
+    def read(path: str, limit: int) -> bytes | None:
+        size = git(repo, "cat-file", "-s", f"{commit}:{path}")
+        if size is None:
+            return None
+        if int(size) > limit:
+            raise HistoryInvalid(f"{path} is {int(size)} bytes, over {limit:,}")
+        return git(repo, "cat-file", "blob", f"{commit}:{path}")
+    return read
+
+
+def catalog_history(repo: Path, below: str | None = None) -> list[Release] | None:
+    """The catalog's earlier releases for the artifact-history check, as release_commits lists them, each read
+    as blobs at its commit; None when the tag listing cannot be read."""
+    commits = release_commits(repo, below)
+    if commits is None:
+        return None
+    return [Release(tag, git_reader(repo, commit)) for tag, commit in commits]
 
 
 def repository_releases():
     return catalog_releases(ROOT, release_being_made())
 
 
+def repository_history():
+    return catalog_history(ROOT, release_being_made())
+
+
+def release_directories(root: Path) -> list[Path]:
+    found = [d for d in root.iterdir() if d.is_dir() and release_tag_ok(d.name)] if root.is_dir() else []
+    return sorted(found, key=lambda d: tag_order(d.name))
+
+
+def directory_releases(root: Path):
+    """An example catalog's earlier releases for the upgrade-key check, one directory per tag under `root`
+    standing for that tag's commit: `[(tag, its manifest.json, or None)]`."""
+    def releases():
+        return [(d.name, (d / "manifest.json").read_bytes() if (d / "manifest.json").is_file() else None) for d in release_directories(root)]
+    return releases
+
+
+def directory_reader(base: Path):
+    def read(path: str, limit: int) -> bytes | None:
+        target = base / path
+        if target.is_symlink() or not target.is_file():
+            return None
+        size = target.stat().st_size
+        if size > limit:
+            raise HistoryInvalid(f"{path} is {size} bytes, over {limit:,}")
+        return target.read_bytes()
+    return read
+
+
+def directory_history(root: Path):
+    """An example catalog's earlier releases for the artifact-history check, one directory per tag under
+    `root`, each holding that release's files as its commit would."""
+    def history():
+        return [Release(d.name, directory_reader(d)) for d in release_directories(root)]
+    return history
+
+
 def example_releases():
     """The example catalog's earlier releases (tests/fixtures/releases/<tag>/manifest.json), in tag order."""
-    found = [d for d in EXAMPLE_RELEASES.iterdir() if d.is_dir() and release_tag_ok(d.name)]
-    return [(d.name, (d / "manifest.json").read_bytes()) for d in sorted(found, key=lambda d: tag_order(d.name))]
+    return directory_releases(EXAMPLE_RELEASES)()
+
+
+def example_history():
+    return directory_history(EXAMPLE_RELEASES)()
 
 
 def release_rows(data) -> list[tuple[str, str]]:
     """An earlier release's manifest, read for each row's `id` and `entryDigest` whatever its form, entry
-    format version 1 included; it is not imported as version 2 (RFC 0019 §3)."""
+    format version 1 included; it is not imported as the current entry format (RFC 0019 §3)."""
     try:
         rows = json.loads(data.decode("utf-8")) if isinstance(data, bytes) else None
     except (UnicodeDecodeError, ValueError):
@@ -1069,6 +1306,120 @@ def upgrade_history_problems(entry: dict, releases) -> list[str]:
         f"upgrade: the key {key!r} is the entryDigest of no row with id {entry['id']} in an earlier release's manifest"
         for key in entry["upgrade"] if key not in held
     ]
+
+
+# ---------------------------------------------------------------------------------------------
+# The artifact pairs, within the release and across the catalog's earlier releases (RFC 0019 §§3, 7)
+
+
+def named_pair(entry) -> tuple[tuple[str, str], str] | None:
+    """An entry's artifact pair and the canonical digest it declares under it, for an entry of version 3 whose
+    reference is named; None for any other entry, which holds no pair."""
+    if not (isinstance(entry, dict) and entry.get("entryVersion") == ENTRY_VERSION and is_int(entry["entryVersion"])):
+        return None
+    reference, artifact = entry.get("dialect"), entry.get("artifact")
+    if not (isinstance(reference, dict) and "formatVersion" in reference and isinstance(artifact, dict)):
+        return None
+    return (artifact.get("id"), artifact.get("version")), reference.get("digest")
+
+
+def current_pairs(tree: Tree, paths: list[str]) -> list[tuple[tuple[str, str], str, str]]:
+    """`[(pair, canonical digest, entry path)]` for the release's entries whose reference and artifact hold
+    against their documents (reference_refusal): the pair and the canonical dialect.digest, read from the
+    entry the row pins, not from the row (RFC 0019 §7). An entry refused otherwise is refused on its own."""
+    found = []
+    for path in paths:
+        directory = tree.base / path
+        try:
+            entry = load_strict((directory / "entry.json").read_bytes())
+            document = load_strict((directory / "dialect.json").read_bytes())
+        except (OSError, ValueError):
+            continue
+        pair = named_pair(entry)
+        if pair is not None and reference_refusal(entry, document) is None:
+            found.append((pair[0], pair[1], path))
+    return found
+
+
+def release_pairs(release: Release) -> list[tuple[str, tuple[str, str], str]]:
+    """`[(entry id, pair, canonical digest)]` of one earlier release, read as RFC 0019 §7 reads it: its manifest
+    in its own row form within §3's bounds; every entry a row pins, as the blob at the release's commit, within
+    64 KiB, held to its row's entryDigest and read for its entryVersion. Only an entry of version 3 whose
+    reference is named is held to §3's `dialect` and `artifact` forms and holds a pair; any other entry is
+    digest-checked only. A missing or malformed manifest or entry raises HistoryInvalid."""
+    data = release.read("manifest.json", MAX_MANIFEST_BYTES)
+    if data is None:
+        raise HistoryInvalid("it holds no manifest.json")
+    try:
+        rows = load_strict(data)
+    except ValueError as error:
+        raise HistoryInvalid(f"its manifest.json is malformed: {error}") from None
+    malformed = manifest_problems(rows, historical=True)
+    if malformed:
+        raise HistoryInvalid(f"its manifest.json is malformed: {malformed[0]}")
+    pairs = []
+    for row in rows:
+        name = f"{row['path']}/entry.json"
+        data = release.read(name, MAX_TEXT_FILE)
+        if data is None:
+            raise HistoryInvalid(f"{name}, which its manifest pins, is missing")
+        if digest(data) != row["entryDigest"]:
+            raise HistoryInvalid(f"{name} does not match its row's entryDigest")
+        try:
+            entry = load_strict(data)
+        except ValueError as error:
+            raise HistoryInvalid(f"{name} is malformed: {error}") from None
+        if not (isinstance(entry, dict) and is_int(entry.get("entryVersion"))):
+            raise HistoryInvalid(f"{name} is malformed: it is not an object with an integer entryVersion")
+        reference = entry.get("dialect")
+        if not (entry["entryVersion"] == ENTRY_VERSION and isinstance(reference, dict) and "formatVersion" in reference):
+            continue  # no pair: held by its entryDigest only
+        problem = reference_form_problem(reference, entry.get("kind") == "preset")
+        if problem is None and entry.get("kind") != "dialect":
+            problem = "a named reference on an entry that is not of kind dialect"
+        if problem is None:
+            problem = "a named reference without artifact" if "artifact" not in entry else artifact_form_problem(entry["artifact"])
+        if problem:
+            raise HistoryInvalid(f"{name} is malformed: {problem}")
+        pair, canonical = named_pair(entry)
+        pairs.append((row["id"], pair, canonical))
+    return pairs
+
+
+def artifact_problems(tree: Tree, paths: list[str]) -> list[str]:
+    """RFC 0019 §§3, 7: `(artifact.id, artifact.version)` is immutable within the release and across every earlier
+    release of the catalog. Two entries of the release declaring one pair with different canonical digests, or an
+    entry declaring an earlier release's pair with another canonical digest, even one since withdrawn, is
+    `artifact-content-changed`; the same pair and digest is admitted in another entry. The earlier releases are
+    read from the catalog's tags, with no form-only fallback: a listing that cannot be read, or a missing or
+    malformed manifest or entry, is `artifact-history-invalid`."""
+    current = current_pairs(tree, paths)
+    problems = []
+    by_pair: dict[tuple[str, str], dict[str, list[str]]] = {}
+    for pair, canonical, path in current:
+        by_pair.setdefault(pair, {}).setdefault(canonical, []).append(path)
+    for pair, digests in sorted(by_pair.items()):
+        if len(digests) > 1:
+            held = "; ".join(f"{', '.join(paths)} with {d}" for d, paths in sorted(digests.items()))
+            problems.append(f"artifact-content-changed: the release declares the pair ({pair[0]}, {pair[1]}) with different canonical digests: {held}")
+    history = tree.history()
+    if history is None:
+        return problems + ["artifact-history-invalid: the catalog's tag listing cannot be read (a shallow clone, or no git checkout): fetch its tags"]
+    published: dict[tuple[str, str], list[tuple[str, str, str]]] = {}
+    for release in history:
+        try:
+            for entry_id, pair, canonical in release_pairs(release):
+                published.setdefault(pair, []).append((release.tag, entry_id, canonical))
+        except HistoryInvalid as error:
+            problems.append(f"artifact-history-invalid: release {release.tag}: {error}")
+    for pair, canonical, path in current:
+        for tag, entry_id, earlier in published.get(pair, []):
+            if earlier != canonical:
+                problems.append(
+                    f"artifact-content-changed: {path} declares the pair ({pair[0]}, {pair[1]}) with canonical digest "
+                    f"{canonical}; release {tag} published it in {entry_id} with {earlier}"
+                )
+    return problems
 
 
 # ---------------------------------------------------------------------------------------------
@@ -1139,7 +1490,7 @@ def link_problems(base: Path) -> list[str]:
 
 class RepositoryTree(unittest.TestCase):
     def test_manifest_and_entries(self):
-        tree = Tree(ROOT, repository_releases)
+        tree = Tree(ROOT, repository_releases, repository_history)
         self.assertEqual(tree_problems(tree), [])
 
     def test_says_how_many_entries(self):
@@ -1202,8 +1553,9 @@ class ExampleEntry(unittest.TestCase):
 
     def test_each_type_and_bound_refuses_its_example(self):
         entry = load_strict((self.tree.entry_dirs()[0] / "entry.json").read_bytes())
+        document = load_strict((self.tree.entry_dirs()[0] / "dialect.json").read_bytes())
         ident = "example.fx-convert"
-        self.assertEqual(entry_problems(entry, ident, 2), [])
+        self.assertEqual(entry_problems(entry, ident, document), [])
         d = "sha256:" + "a" * 64
         fx = entry["fixtures"][0]
         ver = {"date": "2026-10-14", "runner": "v0.9.0", "runtime": "v0.32.0", "readers": [READER], "result": "agree"}
@@ -1216,9 +1568,10 @@ class ExampleEntry(unittest.TestCase):
 
         refused = {
             "entryVersion 1": with_(entryVersion=1),
-            "entryVersion 3": with_(entryVersion=3),
+            "entryVersion 2": with_(entryVersion=2),
+            "entryVersion 4": with_(entryVersion=4),
             "entryVersion true": with_(entryVersion=True),
-            "entryVersion string": with_(entryVersion="2"),
+            "entryVersion string": with_(entryVersion="3"),
             "kind missing": {k: v for k, v in entry.items() if k != "kind"},
             "kind other": with_(kind="recipe"),
             "kind not a string": with_(kind=["dialect"]),
@@ -1285,7 +1638,7 @@ class ExampleEntry(unittest.TestCase):
         }
         for label, candidate in refused.items():
             with self.subTest(label):
-                self.assertTrue(entry_problems(candidate, ident, 2), label)
+                self.assertTrue(entry_problems(candidate, ident, document), label)
         accepted = {
             "digests instead of versions": with_(pack={"id": entry["pack"]["id"], "digests": [d] * 16}),
             "LicenseRef": with_(licence="LicenseRef-Acme-1"),
@@ -1295,7 +1648,7 @@ class ExampleEntry(unittest.TestCase):
         }
         for label, candidate in accepted.items():
             with self.subTest(label):
-                self.assertEqual(entry_problems(candidate, candidate["id"] if label == "bounds" else ident, 2), [])
+                self.assertEqual(entry_problems(candidate, candidate["id"] if label == "bounds" else ident, document), [])
 
     def test_duplicate_member_names_are_refused(self):
         with self.assertRaises(ValueError):
@@ -1476,9 +1829,10 @@ class TwoDocumentExamples(unittest.TestCase):
         self.assertEqual(verifier_results(self.output), [])
 
     def test_the_output_member_shape_and_bounds(self):
-        _, _, entry, _ = self.entry_and_row(self.both)
+        directory, _, entry, _ = self.entry_and_row(self.both)
+        document = load_strict((directory / "dialect.json").read_bytes())
         ident = "example.triage-both"
-        self.assertEqual(entry_problems(entry, ident, 2, 1), [])
+        self.assertEqual(entry_problems(entry, ident, document, 1), [])
         out = entry["output"]
 
         def with_(**changes):
@@ -1496,12 +1850,13 @@ class TwoDocumentExamples(unittest.TestCase):
         }
         for label, candidate in refused.items():
             with self.subTest(label):
-                self.assertTrue(entry_problems(candidate, ident, 2, 1), label)
-        self.assertEqual(entry_problems(with_(output={**out, "outputVersion": 2}), ident, 2, 2), [])
-        self.assertTrue(entry_problems(entry, ident, 2, 2))
+                self.assertTrue(entry_problems(candidate, ident, document, 1), label)
+        self.assertEqual(entry_problems(with_(output={**out, "outputVersion": 2}), ident, document, 2), [])
+        self.assertTrue(entry_problems(entry, ident, document, 2))
 
     def test_direction_decides_which_documents_the_entry_holds(self):
-        _, _, both, _ = self.entry_and_row(self.both)
+        directory, _, both, _ = self.entry_and_row(self.both)
+        document = load_strict((directory / "dialect.json").read_bytes())
         _, _, only, _ = self.entry_and_row(self.output)
         without = lambda e, name: {k: v for k, v in e.items() if k != name}
         refused = {
@@ -1516,9 +1871,9 @@ class TwoDocumentExamples(unittest.TestCase):
         }
         for label, (candidate, ident) in refused.items():
             with self.subTest(label):
-                self.assertTrue(entry_problems(candidate, ident, 2, 1), label)
+                self.assertTrue(entry_problems(candidate, ident, document, 1), label)
         input_only = without({**both, "direction": "input"}, "output")
-        self.assertEqual(entry_problems(input_only, "example.triage-both", 2, None), [])
+        self.assertEqual(entry_problems(input_only, "example.triage-both", document, None), [])
 
     def test_a_both_entry_without_output_json_is_refused(self):
         import tempfile
@@ -1703,6 +2058,7 @@ class AuthoringMetadata(unittest.TestCase):
 
     def test_each_bound_in_place(self):
         entry = self.entry()
+        document = load_strict((self.tree.entry_dirs()[0] / "dialect.json").read_bytes())
         ident = "example.fx-metadata"
         d = "sha256:" + "a" * 64
 
@@ -1722,7 +2078,7 @@ class AuthoringMetadata(unittest.TestCase):
         }
         for label, candidate in accepted.items():
             with self.subTest(label):
-                self.assertEqual(entry_problems(candidate, ident, 2), [])
+                self.assertEqual(entry_problems(candidate, ident, document), [])
         refused = {
             "description a number": with_(description=1),
             "description null": with_(description=None),
@@ -1743,7 +2099,7 @@ class AuthoringMetadata(unittest.TestCase):
         }
         for label, candidate in refused.items():
             with self.subTest(label):
-                self.assertTrue(entry_problems(candidate, ident, 2), label)
+                self.assertTrue(entry_problems(candidate, ident, document), label)
 
     def test_duplicate_upgrade_keys_are_refused(self):
         with self.assertRaises(ValueError):
@@ -1919,6 +2275,83 @@ class ManifestForm(unittest.TestCase):
 # bytes; or a path restored from the base, or removed where the base has none), and the complete set of
 # problems the tree must produce.
 REFUSED_TREES = {
+    'artifact-content-changed': (
+        'shared-pair-entry',
+        [('path', 'entries/example/fx-named-copy'), ('path', 'manifest.json')],
+        [
+            'artifact-content-changed: the release declares the pair (urn:judgmentpack:dialect:example, 0.1.0) with different canonical digests: entries/example/fx-named-copy with sha256:4bd52732e35716d994535fdfbf07d6f575a4fa0e61b2fc592fcef3da1309934d; entries/example/fx-named with sha256:9a22428fbf9a670a9283ee3a5fb9232c1023f60a77a009e674a917d5f974eb97',
+        ],
+    ),
+    'artifact-content-changed-across-releases': (
+        'named-entry',
+        [('path', 'releases')],
+        [
+            'artifact-content-changed: entries/example/fx-named declares the pair (urn:judgmentpack:dialect:example, 0.1.0) with canonical digest sha256:9a22428fbf9a670a9283ee3a5fb9232c1023f60a77a009e674a917d5f974eb97; release v0.1.0 published it in example.fx-withdrawn with sha256:d2adfc2a5e881b3249a3ccf0ea0807efadd26f8e688dfe8c950e503252f12858',
+        ],
+    ),
+    'artifact-history-entry-missing': (
+        'named-entry',
+        [('path', 'releases')],
+        [
+            'artifact-history-invalid: release v0.1.0: entries/example/fx-withdrawn/entry.json, which its manifest pins, is missing',
+        ],
+    ),
+    'artifact-history-manifest-missing': (
+        'named-entry',
+        [('path', 'releases')],
+        [
+            'artifact-history-invalid: release v0.1.0: it holds no manifest.json',
+        ],
+    ),
+    'artifact-id-differs': (
+        'named-entry',
+        [('member', 'artifact')],
+        [
+            "entries/example/fx-named: artifact-mismatch: artifact.id 'urn:judgmentpack:dialect:other' is not the document's id, 'urn:judgmentpack:dialect:example'",
+        ],
+    ),
+    'artifact-id-with-a-space': (
+        'named-entry',
+        [('member', 'artifact')],
+        [
+            'entries/example/fx-named: artifact-malformed: artifact.id holds an ASCII control character, a space or DEL',
+        ],
+    ),
+    'artifact-on-integer-document': (
+        'example-entry',
+        [('member', 'artifact')],
+        [
+            'entries/example/fx-convert: artifact-forbidden: an entry for an integer-format document carries no artifact',
+        ],
+    ),
+    'artifact-on-output-entry': (
+        'output-entry',
+        [('member', 'artifact')],
+        [
+            'entries/example/triage-write: artifact-forbidden: an output-only entry carries no artifact',
+        ],
+    ),
+    'artifact-required': (
+        'named-entry',
+        [('member', 'artifact')],
+        [
+            "entries/example/fx-named: artifact-required: an entry for a named-format input document carries artifact, the document's id and version",
+        ],
+    ),
+    'artifact-version-differs': (
+        'named-entry',
+        [('member', 'artifact')],
+        [
+            "entries/example/fx-named: artifact-mismatch: artifact.version '0.2.0' is not the document's version, '0.1.0'",
+        ],
+    ),
+    'artifact-version-leading-zero': (
+        'named-entry',
+        [('member', 'artifact')],
+        [
+            "entries/example/fx-named: artifact-malformed: artifact.version '0.01.0' is not MAJOR.MINOR.PATCH in ASCII digits, with no leading zero and no suffix",
+        ],
+    ),
     'binding-65537-bytes': (
         'unbound-entry',
         [('path', 'entries/example/fx-unbound/fixtures/valid/binding.json')],
@@ -2098,7 +2531,14 @@ REFUSED_TREES = {
         'metadata-entry',
         [('member', 'entryVersion')],
         [
-            'entries/example/fx-metadata: entry: entryVersion 1 is not 2; a version-2 reader refuses any other entry format version',
+            'entries/example/fx-metadata: entry-version-unread: entryVersion 1 is not 3; a version-3 reader refuses versions 1 and 2',
+        ],
+    ),
+    'entry-version-2': (
+        'metadata-entry',
+        [('member', 'entryVersion')],
+        [
+            'entries/example/fx-metadata: entry-version-unread: entryVersion 2 is not 3; a version-3 reader refuses versions 1 and 2',
         ],
     ),
     'entry-without-kind': (
@@ -2149,6 +2589,27 @@ REFUSED_TREES = {
         [('path', 'entries/example/fx-unbound/fixtures/valid/binding.json'), ('path', 'manifest.json')],
         [
             'entries/example/fx-unbound: fixtures/valid: binding.json is required: the dialect has an unbound source',
+        ],
+    ),
+    'format-integer-reference-named-document': (
+        'named-entry',
+        [('member', 'dialect')],
+        [
+            "entries/example/fx-named: dialect-format-mismatch: an integer reference, dialectVersion 3, with a named-format document, formatVersion '3.0.0'",
+        ],
+    ),
+    'format-named-reference-integer-document': (
+        'example-entry',
+        [('member', 'dialect')],
+        [
+            "entries/example/fx-convert: dialect-format-mismatch: a named reference, formatVersion '2.0.0', with an integer-format document",
+        ],
+    ),
+    'format-selector-unequal': (
+        'named-entry',
+        [('member', 'dialect')],
+        [
+            "entries/example/fx-named: dialect-format-mismatch: formatVersion '2.0.0' is not the document's, '3.0.0'",
         ],
     ),
     'manifest-1025-rows': (
@@ -2319,11 +2780,25 @@ REFUSED_TREES = {
             'manifest[0]: missing kind',
         ],
     ),
+    'mixed-entry-versions': (
+        'shared-pair-entry',
+        [('member', 'entryVersion')],
+        [
+            'entries/example/fx-named: entry-version-unread: entryVersion 2 is not 3; a version-3 reader refuses versions 1 and 2',
+        ],
+    ),
+    'named-dialect-changed': (
+        'named-entry',
+        [('path', 'entries/example/fx-named/dialect.json'), ('path', 'manifest.json')],
+        [
+            "entries/example/fx-named: dialect-digest-mismatch: dialect.digest is not the digest of dialect.json's canonical bytes, identity members included",
+        ],
+    ),
     'preset-dialect-changed': (
         'preset-entry',
         [('path', 'entries/example/company-research/dialect.json')],
         [
-            "entries/example/company-research: dialect.digest is not the digest of dialect.json's canonical bytes",
+            "entries/example/company-research: dialect-digest-mismatch: dialect.digest is not the digest of dialect.json's canonical bytes",
             "entries/example/company-research: dialect.json does not match the manifest's dialectDigest",
         ],
     ),
@@ -2331,9 +2806,7 @@ REFUSED_TREES = {
         'preset-entry',
         [('member', 'dialect')],
         [
-            "entries/example/company-research: dialect: a preset's dialectVersion is 3",
-            "entries/example/company-research: dialect: dialectVersion is not the document's own version",
-            'entries/example/company-research: entry: sourceKinds names research, not a kind of dialect version 2',
+            "entries/example/company-research: dialect-reference-form: a preset's dialectVersion is exactly 3, not 2",
         ],
     ),
     'preset-direction-both': (
@@ -2344,6 +2817,13 @@ REFUSED_TREES = {
             'entries/example/company-research: entry: output is required for direction both',
             'entries/example/company-research: no output.json',
             'entries/example/company-research: the manifest lacks outputDigest for direction both',
+        ],
+    ),
+    'preset-format-version': (
+        'preset-entry',
+        [('member', 'dialect')],
+        [
+            'entries/example/company-research: dialect-reference-form: a preset admits only the integer form, dialectVersion 3, and no formatVersion',
         ],
     ),
     'preset-holds-a-binding-document': (
@@ -2364,7 +2844,7 @@ REFUSED_TREES = {
         'preset-entry',
         [('path', 'entries/example/company-research/dialect.json'), ('member', 'dialect'), ('path', 'manifest.json')],
         [
-            "entries/example/company-research: a preset's source 'registry' is bound: every source with an unbound form is unbound",
+            "entries/example/company-research: bound-derivative: a preset's source 'registry' is bound: every source with an unbound form is unbound",
         ],
     ),
     'preset-requires-input-profile': (
@@ -2378,7 +2858,7 @@ REFUSED_TREES = {
         'preset-entry',
         [('path', 'entries/example/company-research/dialect.json'), ('member', 'dialect'), ('path', 'manifest.json')],
         [
-            "entries/example/company-research: a preset's source 'primary' is bound: every source with an unbound form is unbound",
+            "entries/example/company-research: bound-derivative: a preset's source 'primary' is bound: every source with an unbound form is unbound",
         ],
     ),
     'preset-row-fixtures-not-empty': (
@@ -2418,6 +2898,13 @@ REFUSED_TREES = {
             "entries/example/company-research: entry: a preset's verification is the empty array",
         ],
     ),
+    'preset-with-artifact': (
+        'preset-entry',
+        [('member', 'artifact')],
+        [
+            'entries/example/company-research: artifact-forbidden: a preset carries no artifact',
+        ],
+    ),
     'preset-with-fixtures': (
         'preset-entry',
         [('member', 'fixtures')],
@@ -2430,6 +2917,20 @@ REFUSED_TREES = {
         [('member', 'pack')],
         [
             'entries/example/company-research: entry: a preset has no pack',
+        ],
+    ),
+    'reference-both-selectors': (
+        'named-entry',
+        [('member', 'dialect')],
+        [
+            'entries/example/fx-named: dialect-reference-form: dialect has both dialectVersion and formatVersion',
+        ],
+    ),
+    'reference-neither-selector': (
+        'named-entry',
+        [('member', 'dialect')],
+        [
+            'entries/example/fx-named: dialect-reference-form: dialect has neither dialectVersion nor formatVersion',
         ],
     ),
     'source-kinds-not-the-documents': (
@@ -2499,21 +3000,21 @@ REFUSED_TREES = {
         'metadata-entry',
         [('member', 'verification')],
         [
-            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/tools/./dialect_verify.py@cae45edb94e57c9505813d2e64820342d6bd2ef5' has an empty, '.' or '..' path segment",
+            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/tools/./dialect_verify.py@8371cdb8f3f791f1a826b609da0d102a1c93ae6c' has an empty, '.' or '..' path segment",
         ],
     ),
     'verification-reader-empty-path': (
         'metadata-entry',
         [('member', 'verification')],
         [
-            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/@cae45edb94e57c9505813d2e64820342d6bd2ef5' has no path",
+            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/@8371cdb8f3f791f1a826b609da0d102a1c93ae6c' has no path",
         ],
     ),
     'verification-reader-segment-character': (
         'metadata-entry',
         [('member', 'verification')],
         [
-            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/tools/dialect+verify.py@cae45edb94e57c9505813d2e64820342d6bd2ef5' has a path segment of a character outside [A-Za-z0-9_.-]",
+            "entries/example/fx-metadata: verification[0]: readers[0] 'Judgment-Pack/judgment-pack-spec/tools/dialect+verify.py@8371cdb8f3f791f1a826b609da0d102a1c93ae6c' has a path segment of a character outside [A-Za-z0-9_.-]",
         ],
     ),
     'verification-reader-without-commit': (
@@ -2702,6 +3203,10 @@ class ReaderLocators(unittest.TestCase):
 
 PRESET = EXAMPLE.parent / "preset-entry"
 UNREAD_VERSION = EXAMPLE.parent / "unread-version-entry"
+NAMED = EXAMPLE.parent / "named-entry"
+NAMED_2 = EXAMPLE.parent / "named-2-entry"
+NAMED_UNBOUND = EXAMPLE.parent / "named-unbound-entry"
+SHARED_PAIR = EXAMPLE.parent / "shared-pair-entry"
 
 
 def scratch_tree(source: Path, tmp: str) -> Tree:
@@ -2736,33 +3241,50 @@ def rewrite_dialect(tree: Tree, alter) -> None:
 
 
 class EntryFormatVersion(unittest.TestCase):
-    """RFC 0019 §3: entry format version 2 requires `kind`; a version-2 reader refuses a version-1 entry and a
-    version-1 manifest, and the empty manifest fits both forms."""
+    """RFC 0019 §3 and Compatibility: entry format version 3 requires `kind`; a version-3 reader refuses version-1
+    and version-2 entries (`entry-version-unread`) and version-1 manifest rows, which lack `kind`; the row form is
+    version 2's, unchanged; and the empty manifest fits every form."""
 
-    def test_every_example_is_of_version_2_with_its_kind(self):
-        for tree in [EXAMPLE, METADATA, UNBOUND, PRESET, UNREAD_VERSION] + [EXAMPLE.parent / n for n in ("unread-kind-entry", "both-entry", "output-entry")]:
+    def test_every_example_is_of_version_3_with_its_kind(self):
+        for tree in [EXAMPLE, METADATA, UNBOUND, PRESET, UNREAD_VERSION, NAMED, NAMED_2, NAMED_UNBOUND, SHARED_PAIR] + [EXAMPLE.parent / n for n in ("unread-kind-entry", "both-entry", "output-entry")]:
             with self.subTest(tree.name):
-                entry = load_strict((Tree(tree).entry_dirs()[0] / "entry.json").read_bytes())
-                row = Tree(tree).manifest()[0]
-                self.assertEqual((entry["entryVersion"], entry["kind"]), (2, row["kind"]))
-                self.assertEqual(entry["kind"], "preset" if tree == PRESET else "dialect")
+                for directory, row in zip(Tree(tree).entry_dirs(), Tree(tree).manifest()):
+                    entry = load_strict((directory / "entry.json").read_bytes())
+                    self.assertEqual((entry["entryVersion"], entry["kind"]), (3, row["kind"]))
+                    self.assertEqual(entry["kind"], "preset" if tree == PRESET else "dialect")
 
-    def test_a_version_1_entry_is_refused(self):
+    def test_versions_1_and_2_are_refused(self):
         published = EXAMPLE_RELEASES / "v0.1.0" / "entries/example/fx-convert/entry.json"
         entry = load_strict(published.read_bytes())
         self.assertEqual((entry["entryVersion"], "kind" in entry), (1, False))
         self.assertEqual(
-            entry_problems(entry, "example.fx-convert", 2),
-            ["entry: entryVersion 1 is not 2; a version-2 reader refuses any other entry format version"],
+            entry_problems(entry, "example.fx-convert"),
+            ["entry-version-unread: entryVersion 1 is not 3; a version-3 reader refuses versions 1 and 2"],
+        )
+        current = load_strict((EXAMPLE_TREE.entry_dirs()[0] / "entry.json").read_bytes())
+        self.assertEqual(
+            entry_problems({**current, "entryVersion": 2}, "example.fx-convert"),
+            ["entry-version-unread: entryVersion 2 is not 3; a version-3 reader refuses versions 1 and 2"],
         )
 
     def test_a_version_1_manifest_is_refused(self):
         rows = load_strict((EXAMPLE_RELEASES / "v0.1.0" / "manifest.json").read_bytes())
         self.assertEqual(manifest_problems(rows), [f"manifest[{i}]: missing kind" for i in range(len(rows))])
+        # Read as an earlier release's manifest, it is held to its own row form (RFC 0019 §7).
+        self.assertEqual(manifest_problems(rows, historical=True), [])
+        self.assertTrue(manifest_problems([{**rows[0], "kind": "dialect"}, rows[1]], historical=True))
 
-    def test_the_empty_manifest_fits_both_forms(self):
+    def test_the_empty_manifest_fits_every_form(self):
         self.assertEqual(manifest_problems([]), [])
+        self.assertEqual(manifest_problems([], historical=True), [])
         self.assertEqual(release_rows(b"[]\n"), [])
+
+    def test_the_row_form_is_unchanged(self):
+        # RFC 0019 §3: version 3 adds no member to the row; the artifact pair lives in the entry entryDigest pins.
+        row = Tree(NAMED).manifest()[0]
+        self.assertEqual(sorted(row), ["dialectDigest", "entryDigest", "fixtures", "id", "kind", "path"])
+        self.assertEqual(manifest_problems([row]), [])
+        self.assertEqual(manifest_problems([{**row, "artifact": {"id": "urn:judgmentpack:dialect:example", "version": "0.1.0"}}]), ["manifest[0]: unknown member artifact"])
 
     def test_a_version_1_tree_is_refused_whole(self):
         import tempfile
@@ -2774,11 +3296,18 @@ class EntryFormatVersion(unittest.TestCase):
             (directory / "entry.json").write_bytes((published / "entries/example/fx-convert/entry.json").read_bytes())
             rows = [r for r in load_strict((published / "manifest.json").read_bytes()) if r["id"] == "example.fx-convert"]
             tree.manifest_path.write_bytes((json.dumps(rows, indent=2) + "\n").encode("utf-8"))
-            refused_entry = "entries/example/fx-convert: entry: entryVersion 1 is not 2; a version-2 reader refuses any other entry format version"
+            refused_entry = "entries/example/fx-convert: entry-version-unread: entryVersion 1 is not 3; a version-3 reader refuses versions 1 and 2"
             self.assertEqual(sorted(tree_problems(tree)), [refused_entry, "manifest[0]: missing kind"])
             rows[0]["kind"] = "dialect"
             tree.manifest_path.write_bytes((json.dumps(rows, indent=2) + "\n").encode("utf-8"))
             self.assertEqual(tree_problems(tree), [refused_entry])
+
+    def test_a_mixed_release_is_refused(self):
+        # RFC 0019 Compatibility: a catalog moves every entry to version 3 in one release; its test refuses a release
+        # holding an entry of another version beside one of version 3.
+        problems = tree_problems(Tree(REFUSED / "mixed-entry-versions"))
+        self.assertEqual(problems, ["entries/example/fx-named: entry-version-unread: entryVersion 2 is not 3; a version-3 reader refuses versions 1 and 2"])
+        self.assertEqual(tree_problems(Tree(SHARED_PAIR)), [])
 
 
 class PresetExample(unittest.TestCase):
@@ -2814,8 +3343,9 @@ class PresetExample(unittest.TestCase):
 
     def test_each_rule_in_place(self):
         entry = self.entry()
+        document = load_strict((self.tree.entry_dirs()[0] / "dialect.json").read_bytes())
         ident = "example.company-research"
-        self.assertEqual(entry_problems(entry, ident, 3), [])
+        self.assertEqual(entry_problems(entry, ident, document), [])
         record = {"date": "2026-10-14", "runner": "v0.11.0", "runtime": "v0.32.0", "readers": [READER], "result": "agree"}
         d = "sha256:" + "a" * 64
         refused = {
@@ -2824,15 +3354,17 @@ class PresetExample(unittest.TestCase):
             "direction output": ({**entry, "direction": "output"}, "entry: a preset's direction is input, not 'output'"),
             "direction both": ({**entry, "direction": "both"}, "entry: a preset's direction is input, not 'both'"),
             "a verification record": ({**entry, "verification": [record]}, "entry: a preset's verification is the empty array"),
-            "dialectVersion 2": ({**entry, "dialect": {**entry["dialect"], "dialectVersion": 2}}, "dialect: a preset's dialectVersion is 3"),
-            "dialectVersion 4": ({**entry, "dialect": {**entry["dialect"], "dialectVersion": 4}}, "dialect: a preset's dialectVersion is 3"),
+            "dialectVersion 2": ({**entry, "dialect": {**entry["dialect"], "dialectVersion": 2}}, "dialect-reference-form: a preset's dialectVersion is exactly 3, not 2"),
+            "dialectVersion 4": ({**entry, "dialect": {**entry["dialect"], "dialectVersion": 4}}, "dialect-reference-form: a preset's dialectVersion is exactly 3, not 4"),
+            "a formatVersion": ({**entry, "dialect": {"path": "dialect.json", "formatVersion": "3.0.0", "digest": entry["dialect"]["digest"]}}, "dialect-reference-form: a preset admits only the integer form, dialectVersion 3, and no formatVersion"),
+            "an artifact": ({**entry, "artifact": {"id": "urn:judgmentpack:dialect:example", "version": "0.1.0"}}, "artifact-forbidden: a preset carries no artifact"),
             "an input profile": ({**entry, "requires": {"inputProfile": d}}, "requires: a preset names no profile, and this one names inputProfile"),
             "a connection profile": ({**entry, "requires": {"connectionProfile": d}}, "requires: a preset names no profile, and this one names connectionProfile"),
         }
         for label, (candidate, problem) in refused.items():
             with self.subTest(label):
-                self.assertIn(problem, entry_problems(candidate, ident, 3))
-        self.assertEqual(entry_problems({**entry, "requires": {"platform": "example-registry"}}, ident, 3), [])
+                self.assertIn(problem, entry_problems(candidate, ident, document))
+        self.assertEqual(entry_problems({**entry, "requires": {"platform": "example-registry"}}, ident, document), [])
 
     def test_its_document_is_held_by_the_catalogs_form_checker(self):
         import tempfile
@@ -2865,7 +3397,7 @@ class PresetExample(unittest.TestCase):
             tree = scratch_tree(PRESET, tmp)
             rewrite_dialect(tree, bind)
             self.assertEqual(tree_problems(tree), [
-                "entries/example/company-research: a preset's source 'registry' is bound: every source with an unbound form is unbound",
+                "entries/example/company-research: bound-derivative: a preset's source 'registry' is bound: every source with an unbound form is unbound",
             ])
 
     def test_a_preset_directory_holds_three_files(self):
@@ -2885,8 +3417,8 @@ class PresetExample(unittest.TestCase):
 
 
 class CatalogFormChecker(unittest.TestCase):
-    """RFC 0019 §§3–4: every dialect.json, of either kind, is held to RFC 0018 §§2–8 and 12 as round 8 amends
-    them by the catalog's own form checker, also when every fixture of the entry is skipped."""
+    """RFC 0019 §§3–4: every dialect.json, of either kind, is held to RFC 0018 §§2–8 and 12 through round 11 and
+    RFC 0021's §2.1 by the catalog's own form checker, also when every fixture of the entry is skipped."""
 
     def test_every_example_document_passes_it(self):
         for path in sorted((EXAMPLE.parent).glob("*/entries/*/*/dialect.json")):
@@ -3092,6 +3624,464 @@ class ResearchBindingDocument(unittest.TestCase):
             document["sources"]["recipe"]["webProfiles"] = {"search": {"profile": "web", "profileDigest": "sha256:" + "b" * 64}}
             path.write_bytes(canon(document))
             self.assertEqual(tree_problems(tree), [])
+
+
+NAMED_REFUSALS = (
+    "entry-version-unread", "dialect-reference-form", "dialect-format-mismatch", "artifact-required",
+    "artifact-forbidden", "artifact-malformed", "artifact-mismatch", "dialect-digest-mismatch",
+    "artifact-content-changed", "artifact-history-invalid", "bound-derivative",
+)
+REFERENCE_REFUSALS = NAMED_REFUSALS[1:8]
+PAIR = {"id": "urn:judgmentpack:dialect:example", "version": "0.1.0"}
+
+
+def reference_codes(problems: list[str]) -> list[str]:
+    return [code for p in problems for code in REFERENCE_REFUSALS if p.startswith(f"{code}: ")]
+
+
+class NamedEntries(unittest.TestCase):
+    """RFC 0019 §3, entry format version 3: an entry for a named-format document (RFC 0021) references it by
+    `formatVersion` and carries `artifact`, both read from the document and checked against it."""
+
+    trees = (NAMED, NAMED_2, NAMED_UNBOUND, SHARED_PAIR)
+
+    def entry_and_document(self, base: Path, index: int = 0):
+        directory = Tree(base).entry_dirs()[index]
+        return load_strict((directory / "entry.json").read_bytes()), load_strict((directory / "dialect.json").read_bytes())
+
+    def test_each_holds_to_the_format(self):
+        for base in self.trees:
+            with self.subTest(base.name):
+                self.assertEqual(tree_problems(Tree(base)), [])
+
+    @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
+    def test_each_fixture_is_a_reading_of_the_pinned_verifier(self):
+        for base in self.trees:
+            with self.subTest(base.name):
+                self.assertEqual({status for _, status, _ in verifier_results(Tree(base))}, {"ok"})
+
+    def test_the_reference_and_the_pair_are_the_documents(self):
+        for base, selector in ((NAMED, "3.0.0"), (NAMED_2, "2.0.0"), (NAMED_UNBOUND, "3.0.0")):
+            with self.subTest(base.name):
+                entry, document = self.entry_and_document(base)
+                self.assertEqual(sorted(entry["dialect"]), ["digest", "formatVersion", "path"])
+                self.assertEqual((entry["dialect"]["formatVersion"], document["formatVersion"]), (selector, selector))
+                self.assertEqual(entry["artifact"], {"id": document["id"], "version": document["version"]})
+                # The selector and the artifact version are independent: format 3.0.0 or 2.0.0, artifact 0.1.0.
+                self.assertEqual(entry["artifact"]["version"], "0.1.0")
+                self.assertIsNone(reference_refusal(entry, document))
+
+    @unittest.skipUnless(VERIFIER.is_file(), ".spec/ is absent: the preparation verifier is not checked out (CI checks it out at the pinned commit)")
+    def test_the_canonical_digest_is_the_whole_documents_as_the_pinned_verifier_computes_it(self):
+        verifier = load_verifier()
+        for base in (NAMED, NAMED_2, NAMED_UNBOUND):
+            with self.subTest(base.name):
+                entry, document = self.entry_and_document(base)
+                self.assertEqual(canon(document), verifier.canon(document))
+                self.assertEqual(digest(canon(document)), entry["dialect"]["digest"])
+                for member in ("formatVersion", "id", "version"):
+                    without = {k: v for k, v in document.items() if k != member}
+                    self.assertNotEqual(digest(canon(without)), entry["dialect"]["digest"], member)
+
+    def test_the_binding_document_names_the_published_digest(self):
+        entry, document = self.entry_and_document(NAMED_UNBOUND)
+        binding = load_strict((Tree(NAMED_UNBOUND).entry_dirs()[0] / "fixtures" / "valid" / BINDING).read_bytes())
+        self.assertEqual(binding["dialect"], entry["dialect"]["digest"])
+        self.assertEqual(unbound_source_names(document), {"intake"})
+
+    def test_source_kinds_follow_the_family_the_selector_selects(self):
+        for base, ident, admitted in ((NAMED_2, "example.fx-named-2", False), (NAMED, "example.fx-named", True)):
+            with self.subTest(base.name):
+                entry, document = self.entry_and_document(base)
+                problems = entry_problems({**entry, "sourceKinds": ["operation", "research"]}, ident, document)
+                family = f"the family formatVersion {document['formatVersion']!r} selects"
+                self.assertEqual(problems, [] if admitted else [f"entry: sourceKinds names research, not a kind of {family}"])
+                # Without the document, the reference's selector names the family.
+                problems = entry_problems({**entry, "sourceKinds": ["operation", "research"]}, ident)
+                self.assertEqual(problems, [] if admitted else [f"entry: sourceKinds names research, not a kind of {family}"])
+
+    def test_a_metadata_only_update_keeps_the_pair_and_the_canonical_digest(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = scratch_tree(NAMED, tmp)
+            before = tree.manifest()[0]["entryDigest"]
+            entry, _ = self.entry_and_document(NAMED)
+            rewrite_entry(tree, lambda e: e.update(description="A named artifact, with a description added."))
+            after, _ = self.entry_and_document(tree.base)
+            self.assertNotEqual(tree.manifest()[0]["entryDigest"], before)
+            self.assertEqual((after["artifact"], after["dialect"]["digest"]), (entry["artifact"], entry["dialect"]["digest"]))
+            self.assertEqual(tree_problems(tree), [])
+
+    def test_a_differently_indented_document_changes_the_stored_digest_alone(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tree = scratch_tree(NAMED, tmp)
+            path = tree.entry_dirs()[0] / "dialect.json"
+            row = tree.manifest()[0]
+            path.write_bytes(json.dumps(load_strict(path.read_bytes()), indent=4).encode("utf-8") + b"\n")
+            self.assertEqual(tree_problems(tree), ["entries/example/fx-named: dialect.json does not match the manifest's dialectDigest"])
+            rows = [{**row, "dialectDigest": digest(path.read_bytes())}]
+            tree.manifest_path.write_bytes((json.dumps(rows, indent=2) + "\n").encode("utf-8"))
+            self.assertEqual(tree_problems(tree), [])
+
+
+class ReferenceRefusals(unittest.TestCase):
+    """RFC 0019 §3, "Reference refusals": each by name, and the first that applies in the text's order — the
+    reference's form, a format mismatch, the artifact checks, the digest — reported alone."""
+
+    def cases(self):
+        named, named_document = load_strict((Tree(NAMED).entry_dirs()[0] / "entry.json").read_bytes()), load_strict((Tree(NAMED).entry_dirs()[0] / "dialect.json").read_bytes())
+        integer, integer_document = load_strict((EXAMPLE_TREE.entry_dirs()[0] / "entry.json").read_bytes()), load_strict((EXAMPLE_TREE.entry_dirs()[0] / "dialect.json").read_bytes())
+        preset, preset_document = load_strict((Tree(PRESET).entry_dirs()[0] / "entry.json").read_bytes()), load_strict((Tree(PRESET).entry_dirs()[0] / "dialect.json").read_bytes())
+        output = load_strict((Tree(EXAMPLE.parent / "output-entry").entry_dirs()[0] / "entry.json").read_bytes())
+        ref, iref, pref = named["dialect"], integer["dialect"], preset["dialect"]
+        changed = {**named_document, "unmappedEvidence": ["sensitive-data-approvals", "export-control-approvals"]}
+
+        def n(**changes):
+            return {**named, **changes}
+
+        def art(**changes):
+            return n(artifact={**named["artifact"], **changes})
+
+        N, I, P, O = (named_document, "example.fx-named"), (integer_document, "example.fx-convert"), (preset_document, "example.company-research"), (None, "example.triage-write")  # noqa: N806
+        return {
+            # (entry, (document, id), the one reference refusal)
+            "a reference that is not an object": (n(dialect="dialect.json"), N, "dialect-reference-form"),
+            "both selectors": (n(dialect={**ref, "dialectVersion": 3}), N, "dialect-reference-form"),
+            "neither selector": (n(dialect={"path": "dialect.json", "digest": ref["digest"]}), N, "dialect-reference-form"),
+            "an unknown member": (n(dialect={**ref, "id": named_document["id"]}), N, "dialect-reference-form"),
+            "no path": (n(dialect={"formatVersion": "3.0.0", "digest": ref["digest"]}), N, "dialect-reference-form"),
+            "another path": (n(dialect={**ref, "path": "named.json"}), N, "dialect-reference-form"),
+            "a digest that is no digest": (n(dialect={**ref, "digest": ref["digest"].upper()}), N, "dialect-reference-form"),
+            "an unknown selector": (n(dialect={**ref, "formatVersion": "4.0.0"}), N, "dialect-reference-form"),
+            "a selector of another spelling": (n(dialect={**ref, "formatVersion": "3.0"}), N, "dialect-reference-form"),
+            "a selector that is a number": (n(dialect={**ref, "formatVersion": 3}), N, "dialect-reference-form"),
+            "dialectVersion 1": ({**integer, "dialect": {**iref, "dialectVersion": 1}}, I, "dialect-reference-form"),
+            "dialectVersion a string": ({**integer, "dialect": {**iref, "dialectVersion": "2"}}, I, "dialect-reference-form"),
+            "dialectVersion true": ({**integer, "dialect": {**iref, "dialectVersion": True}}, I, "dialect-reference-form"),
+            "a preset's formatVersion": ({**preset, "dialect": {"path": "dialect.json", "formatVersion": "3.0.0", "digest": pref["digest"]}}, P, "dialect-reference-form"),
+            "a preset's dialectVersion 2": ({**preset, "dialect": {**pref, "dialectVersion": 2}}, P, "dialect-reference-form"),
+            "a named reference, an integer document": ({**integer, "dialect": {"path": "dialect.json", "formatVersion": "2.0.0", "digest": iref["digest"]}, "artifact": dict(PAIR)}, I, "dialect-format-mismatch"),
+            "an integer reference, a named document": (n(dialect={"path": "dialect.json", "dialectVersion": 3, "digest": ref["digest"]}), N, "dialect-format-mismatch"),
+            "a selector unequal to the document's": (n(dialect={**ref, "formatVersion": "2.0.0"}), N, "dialect-format-mismatch"),
+            "a dialectVersion unequal to the document's": ({**integer, "dialect": {**iref, "dialectVersion": 3}}, I, "dialect-format-mismatch"),
+            "a preset's integer reference, a named document": (preset, ({**preset_document, "formatVersion": "3.0.0", "id": "x", "version": "0.1.0"}, P[1]), "dialect-format-mismatch"),
+            "no artifact": ({k: v for k, v in named.items() if k != "artifact"}, N, "artifact-required"),
+            "an artifact on an integer document": ({**integer, "artifact": dict(PAIR)}, I, "artifact-forbidden"),
+            "an artifact on a preset": ({**preset, "artifact": dict(PAIR)}, P, "artifact-forbidden"),
+            "an artifact on an output-only entry": ({**output, "artifact": dict(PAIR)}, O, "artifact-forbidden"),
+            "an artifact that is not an object": (n(artifact=[PAIR["id"], PAIR["version"]]), N, "artifact-malformed"),
+            "an artifact without version": (n(artifact={"id": PAIR["id"]}), N, "artifact-malformed"),
+            "an artifact with another member": (art(digest=ref["digest"]), N, "artifact-malformed"),
+            "an empty id": (art(id=""), N, "artifact-malformed"),
+            "an id that is a number": (art(id=1), N, "artifact-malformed"),
+            "an id of 1025 UTF-8 bytes": (art(id="urn:" + "é" * 510 + "x"), N, "artifact-malformed"),
+            "an id with a control character": (art(id="urn:a\u0001b"), N, "artifact-malformed"),
+            "an id with a tab": (art(id="urn:a\tb"), N, "artifact-malformed"),
+            "an id with DEL": (art(id="urn:a\u007fb"), N, "artifact-malformed"),
+            "an id with a lone surrogate": (art(id="urn:a\ud800"), N, "artifact-malformed"),
+            "a version of two components": (art(version="0.1"), N, "artifact-malformed"),
+            "a version with a leading zero": (art(version="00.1.0"), N, "artifact-malformed"),
+            "a prerelease suffix": (art(version="0.1.0-rc.1"), N, "artifact-malformed"),
+            "build metadata": (art(version="0.1.0+build.1"), N, "artifact-malformed"),
+            "a version that is a number": (art(version=1), N, "artifact-malformed"),
+            "a version of non-ASCII digits": (art(version="0.١.0"), N, "artifact-malformed"),
+            "a version with a v": (art(version="v0.1.0"), N, "artifact-malformed"),
+            "a version with a newline after it": (art(version="0.1.0\n"), N, "artifact-malformed"),
+            "another id": (art(id="urn:judgmentpack:dialect:other"), N, "artifact-mismatch"),
+            "an id of another case": (art(id="URN:judgmentpack:dialect:example"), N, "artifact-mismatch"),
+            "another version": (art(version="0.1.1"), N, "artifact-mismatch"),
+            "an id equal only after normalization": (n(artifact={"id": "urn:café", "version": "0.1.0"}), ({**named_document, "id": "urn:café"}, N[1]), "artifact-mismatch"),
+            "changed content under the pair": (named, (changed, N[1]), "dialect-digest-mismatch"),
+            "a changed identity under the reference's digest": (art(id="urn:judgmentpack:dialect:other"), ({**named_document, "id": "urn:judgmentpack:dialect:other"}, N[1]), "dialect-digest-mismatch"),
+            "an integer document changed": (integer, ({**integer_document, "unmappedEvidence": ["x"]}, I[1]), "dialect-digest-mismatch"),
+        }
+
+    def test_each_refusal_by_name(self):
+        for label, (entry, (document, ident), code) in self.cases().items():
+            with self.subTest(label):
+                problems = entry_problems(entry, ident, document)
+                self.assertEqual(reference_codes(problems), [code], problems)
+
+    def test_every_reference_refusal_has_a_case(self):
+        self.assertEqual({code for _, _, code in self.cases().values()}, set(REFERENCE_REFUSALS))
+
+    def test_the_first_that_applies_in_the_texts_order(self):
+        named = load_strict((Tree(NAMED).entry_dirs()[0] / "entry.json").read_bytes())
+        document = load_strict((Tree(NAMED).entry_dirs()[0] / "dialect.json").read_bytes())
+        integer = load_strict((EXAMPLE_TREE.entry_dirs()[0] / "entry.json").read_bytes())
+        integer_document = load_strict((EXAMPLE_TREE.entry_dirs()[0] / "dialect.json").read_bytes())
+        wrong = "sha256:" + "0" * 64
+        ref = named["dialect"]
+        for label, entry, held, expected in [
+            ("form before everything", {**named, "dialect": {**ref, "dialectVersion": 3, "digest": wrong}, "artifact": {"id": ""}}, document, "dialect-reference-form"),
+            # RFC 0019 §3, the review's M1: a named reference with an integer document and no artifact is a mismatch.
+            ("mismatch before required", {**{k: v for k, v in integer.items()}, "dialect": {"path": "dialect.json", "formatVersion": "2.0.0", "digest": wrong}}, integer_document, "dialect-format-mismatch"),
+            ("mismatch before forbidden", {**named, "dialect": {"path": "dialect.json", "dialectVersion": 3, "digest": wrong}}, document, "dialect-format-mismatch"),
+            ("required before digest", {**{k: v for k, v in named.items() if k != "artifact"}, "dialect": {**ref, "digest": wrong}}, document, "artifact-required"),
+            ("forbidden before malformed", {**integer, "artifact": {"id": ""}}, integer_document, "artifact-forbidden"),
+            ("malformed before mismatch and digest", {**named, "dialect": {**ref, "digest": wrong}, "artifact": {"id": "urn:other", "version": "1"}}, document, "artifact-malformed"),
+            ("mismatch before digest", {**named, "dialect": {**ref, "digest": wrong}, "artifact": {**named["artifact"], "version": "9.9.9"}}, document, "artifact-mismatch"),
+            ("digest last", {**named, "dialect": {**ref, "digest": wrong}}, document, "dialect-digest-mismatch"),
+        ]:
+            with self.subTest(label):
+                ident = entry["id"]
+                problems = entry_problems(entry, ident, held)
+                self.assertEqual(reference_codes(problems), [expected], problems)
+                self.assertEqual(reference_refusal(entry, held)[0], expected)
+
+    def test_the_identity_bounds_admit_their_maxima(self):
+        named = load_strict((Tree(NAMED).entry_dirs()[0] / "entry.json").read_bytes())
+        document = load_strict((Tree(NAMED).entry_dirs()[0] / "dialect.json").read_bytes())
+        for label, identity, version in [
+            ("an id of 1024 UTF-8 bytes", "urn:" + "é" * 510, "0.1.0"),
+            ("a non-ASCII id, compared as written", "urn:café", "0.1.0"),
+            ("a version of zeros", PAIR["id"], "0.0.0"),
+            ("a version of large components", PAIR["id"], "12345678901234567890.0.10"),
+        ]:
+            with self.subTest(label):
+                self.assertEqual(len(identity.encode("utf-8")) <= 1024, True)
+                held = {**document, "id": identity, "version": version}
+                entry = {**named, "dialect": {**named["dialect"], "digest": digest(canon(held))}, "artifact": {"id": identity, "version": version}}
+                self.assertIsNone(reference_refusal(entry, held))
+        self.assertEqual(len(("urn:" + "é" * 510).encode("utf-8")), 1024)
+
+    def test_without_the_document_the_entry_is_held_to_its_own_form(self):
+        named = load_strict((Tree(NAMED).entry_dirs()[0] / "entry.json").read_bytes())
+        self.assertIsNone(reference_refusal(named))
+        self.assertEqual(reference_refusal({k: v for k, v in named.items() if k != "artifact"})[0], "artifact-required")
+        self.assertEqual(reference_refusal({**named, "artifact": {**named["artifact"], "version": "1"}})[0], "artifact-malformed")
+
+
+def history_repository(test: unittest.TestCase, path: Path, releases) -> Path:
+    """A scratch git repository holding `releases`, `[(tag, {path: bytes})]`, each a commit of exactly those
+    files, tagged. Local only: no network."""
+    import shutil
+
+    if shutil.which("git") is None:
+        test.skipTest("git is not installed")
+    environment = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+    identity = ["-c", "user.name=exchange-tests", "-c", "user.email=exchange-tests@example.invalid", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"]
+
+    def run(*args):
+        subprocess.run(["git", "-C", str(path), *identity, *args], check=True, capture_output=True, env=environment, timeout=60)
+
+    path.mkdir(parents=True)
+    run("init", "-q")
+    for tag, files in releases:
+        for old in [p for p in path.rglob("*") if p.is_file() and ".git" not in p.relative_to(path).parts]:
+            old.unlink()
+        for name, data in files.items():
+            (path / name).parent.mkdir(parents=True, exist_ok=True)
+            (path / name).write_bytes(data)
+        run("add", "-A")
+        run("commit", "-q", "--allow-empty", "-m", tag)
+        run("tag", tag)
+    return path
+
+
+def published(entry: dict) -> tuple[dict, bytes]:
+    """An earlier release's row and the entry.json it pins."""
+    data = (json.dumps(entry, indent=2) + "\n").encode("utf-8")
+    row = {"id": entry["id"], "kind": entry.get("kind", "dialect"), "path": entry_path(entry["id"]), "entryDigest": digest(data), "dialectDigest": "sha256:" + "d" * 64, "fixtures": []}
+    if entry.get("entryVersion") == 1:
+        row.pop("kind")
+    return row, data
+
+
+def release_files(*entries: dict, manifest=None) -> dict:
+    rows, files = [], {}
+    for entry in entries:
+        row, data = published(entry)
+        rows.append(row)
+        files[f"{row['path']}/entry.json"] = data
+    rows.sort(key=lambda r: r["id"].encode("utf-8"))
+    files["manifest.json"] = manifest if manifest is not None else (json.dumps(rows, indent=2) + "\n").encode("utf-8")
+    return files
+
+
+class ArtifactHistory(unittest.TestCase):
+    """RFC 0019 §§3, 7: `(artifact.id, artifact.version)` is immutable within a release and across every earlier
+    release of the catalog, read from its tags as blobs, with no form-only fallback for the catalog."""
+
+    def named(self) -> dict:
+        return load_strict((Tree(NAMED).entry_dirs()[0] / "entry.json").read_bytes())
+
+    def earlier(self, ident: str, canonical: str, **changes) -> dict:
+        """A version-3 entry an earlier release published under the named example's pair."""
+        entry = {**self.named(), "id": ident, "dialect": {**self.named()["dialect"], "digest": canonical}}
+        entry.update(changes)
+        return entry
+
+    def problems(self, repo: Path, below: str | None = None, base: Path = NAMED) -> list[str]:
+        tree = Tree(base, history=lambda: catalog_history(repo, below))
+        return artifact_problems(tree, [d.relative_to(base).as_posix() for d in tree.entry_dirs()])
+
+    def test_within_one_release(self):
+        self.assertEqual(artifact_problems(Tree(SHARED_PAIR), ["entries/example/fx-named", "entries/example/fx-named-copy"]), [])
+        pairs = current_pairs(Tree(SHARED_PAIR), ["entries/example/fx-named", "entries/example/fx-named-copy"])
+        self.assertEqual(len({(pair, canonical) for pair, canonical, _ in pairs}), 1)
+        self.assertEqual(len(pairs), 2)
+        problems = tree_problems(Tree(REFUSED / "artifact-content-changed"))
+        self.assertEqual(len(problems), 1)
+        self.assertTrue(problems[0].startswith("artifact-content-changed: the release declares the pair (urn:judgmentpack:dialect:example, 0.1.0)"))
+
+    def test_changed_content_under_an_earlier_releases_pair(self):
+        import tempfile
+
+        current = self.named()["dialect"]["digest"]
+        other = digest(b"another canonical document")
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            same = history_repository(self, base / "same", [("v0.1.0", release_files(self.earlier("example.fx-named", current)))])
+            changed = history_repository(self, base / "changed", [("v0.1.0", release_files(self.earlier("example.fx-named", other)))])
+            # The pair published in another entry, which a later release withdrew: identical content is admitted, and
+            # other content is refused even after the withdrawal.
+            withdrawn_same = history_repository(self, base / "withdrawn-same", [
+                ("v0.1.0", release_files(self.earlier("example.fx-old", current))),
+                ("v0.2.0", release_files()),
+            ])
+            withdrawn_changed = history_repository(self, base / "withdrawn-changed", [
+                ("v0.1.0", release_files(self.earlier("example.fx-old", other))),
+                ("v0.2.0", release_files()),
+            ])
+            self.assertEqual(self.problems(same), [])
+            self.assertEqual(self.problems(withdrawn_same), [])
+            expected = (
+                f"artifact-content-changed: entries/example/fx-named declares the pair (urn:judgmentpack:dialect:example, 0.1.0) "
+                f"with canonical digest {current}; release v0.1.0 published it in {{}} with {other}"
+            )
+            self.assertEqual(self.problems(changed), [expected.format("example.fx-named")])
+            self.assertEqual(self.problems(withdrawn_changed), [expected.format("example.fx-old")])
+            # Only releases below the release being made are earlier releases.
+            self.assertEqual(self.problems(withdrawn_changed, below="v0.1.0"), [])
+            self.assertEqual(self.problems(withdrawn_changed, below="v0.2.0"), [expected.format("example.fx-old")])
+            # Through tree_problems, as CI runs it.
+            tree = Tree(NAMED, history=lambda: catalog_history(changed))
+            self.assertEqual(tree_problems(tree), [expected.format("example.fx-named")])
+
+    def test_entries_without_a_pair_are_digest_checked_only(self):
+        import tempfile
+
+        version_1 = {k: v for k, v in load_strict((EXAMPLE_RELEASES / "v0.1.0/entries/example/fx-convert/entry.json").read_bytes()).items()}
+        version_2 = {**load_strict((EXAMPLE_TREE.entry_dirs()[0] / "entry.json").read_bytes()), "entryVersion": 2, "id": "example.fx-two"}
+        # A version-2 entry is not held to version 3's forms, whatever its reference holds; nor is an integer one.
+        odd_version_2 = {**version_2, "id": "example.fx-odd", "dialect": {"formatVersion": "9", "path": "x"}, "artifact": "x"}
+        integer_3 = {**load_strict((EXAMPLE_TREE.entry_dirs()[0] / "entry.json").read_bytes()), "id": "example.fx-three"}
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = history_repository(self, Path(tmp) / "repo", [
+                ("v0.1.0", release_files(version_1)),
+                ("v0.2.0", release_files(version_2, odd_version_2, integer_3)),
+            ])
+            self.assertEqual(self.problems(repo), [])
+            self.assertEqual([pair for release in catalog_history(repo) for pair in release_pairs(release)], [])
+
+    def test_each_history_failure_is_artifact_history_invalid(self):
+        import tempfile
+
+        current = self.named()["dialect"]["digest"]
+        good = self.earlier("example.fx-named", current)
+        row, data = published(good)
+        rows = (json.dumps([row], indent=2) + "\n").encode("utf-8")
+        cases = {
+            "a tag whose commit holds no manifest": ({"README.md": b"no manifest\n"}, "it holds no manifest.json"),
+            "a manifest that is not JSON": ({"manifest.json": b"[{"}, "its manifest.json is malformed"),
+            "a manifest with a member twice": ({"manifest.json": b'[{"id": "a.b", "id": "a.b"}]'}, "a member name is given twice"),
+            "a manifest that is not an array": ({"manifest.json": b"{}"}, "manifest: not an array"),
+            "a row without its entryDigest": ({"manifest.json": json.dumps([{k: v for k, v in row.items() if k != "entryDigest"}]).encode()}, "missing entryDigest"),
+            "a row whose path is not its id's": ({"manifest.json": json.dumps([{**row, "path": "entries/example/other"}]).encode(), "entries/example/other/entry.json": data}, "the path its id names"),
+            "rows of two versions' forms": ({"manifest.json": json.dumps([row, {**{k: v for k, v in row.items() if k != "kind"}, "id": "example.fy", "path": "entries/example/fy"}]).encode(), "entries/example/fx-named/entry.json": data}, "missing kind"),
+            "a manifest over 1 MiB": ({"manifest.json": b"[" + b" " * (1024 * 1024) + b"]"}, "manifest.json is 1048578 bytes, over 1,048,576"),
+            "a pinned entry missing": ({"manifest.json": rows}, "entries/example/fx-named/entry.json, which its manifest pins, is missing"),
+            "a pinned entry that fails its entryDigest": ({"manifest.json": rows, "entries/example/fx-named/entry.json": data + b"\n"}, "does not match its row's entryDigest"),
+            "a pinned entry over 64 KiB": ({"manifest.json": json.dumps([{**row, "entryDigest": digest(b" " * 65537)}]).encode(), "entries/example/fx-named/entry.json": b" " * 65537}, "entry.json is 65537 bytes, over 65,536"),
+        }
+        for label, (files, fragment) in cases.items():
+            with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
+                repo = history_repository(self, Path(tmp) / "repo", [("v0.1.0", files)])
+                problems = self.problems(repo)
+                self.assertEqual(len(problems), 1, problems)
+                self.assertTrue(problems[0].startswith("artifact-history-invalid: release v0.1.0: "), problems)
+                self.assertIn(fragment, problems[0])
+        malformed_entries = {
+            "an entry that is not JSON": b"{",
+            "an entry that is not an object": b"[]\n",
+            "an entry without an integer entryVersion": b'{"entryVersion": "3"}\n',
+            "a named entry without artifact": published({k: v for k, v in good.items() if k != "artifact"})[1],
+            "a named entry with a malformed artifact": published({**good, "artifact": {**good["artifact"], "version": "0.1"}})[1],
+            "a named entry with both selectors": published({**good, "dialect": {**good["dialect"], "dialectVersion": 3}})[1],
+            "a named reference on a preset": published({**good, "kind": "preset"})[1],
+        }
+        for label, entry_bytes in malformed_entries.items():
+            with self.subTest(label), tempfile.TemporaryDirectory() as tmp:
+                manifest = (json.dumps([{**row, "entryDigest": digest(entry_bytes)}], indent=2) + "\n").encode("utf-8")
+                repo = history_repository(self, Path(tmp) / "repo", [("v0.1.0", {"manifest.json": manifest, "entries/example/fx-named/entry.json": entry_bytes})])
+                problems = self.problems(repo)
+                self.assertEqual(len(problems), 1, problems)
+                self.assertTrue(problems[0].startswith("artifact-history-invalid: release v0.1.0: entries/example/fx-named/entry.json is malformed: "), problems)
+
+    def test_an_unreadable_listing_and_a_shallow_clone_are_refused(self):
+        import shutil
+        import tempfile
+
+        unreadable = "artifact-history-invalid: the catalog's tag listing cannot be read (a shallow clone, or no git checkout): fetch its tags"
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertIsNone(catalog_history(Path(tmp) / "not-a-repository"))
+            self.assertEqual(self.problems(Path(tmp) / "not-a-repository"), [unreadable])
+            repo = history_repository(self, Path(tmp) / "repo", [
+                ("v0.1.0", release_files(self.earlier("example.fx-named", self.named()["dialect"]["digest"]))),
+                ("v0.2.0", release_files()),
+            ])
+            self.assertEqual(self.problems(repo), [])
+            # A clone made with a depth lists no tags: the check refuses it, never passing by form alone. The clone is
+            # local, from the scratch repository's path.
+            shallow = Path(tmp) / "shallow"
+            environment = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+            subprocess.run(["git", "clone", "-q", "--depth", "1", repo.as_uri(), str(shallow)], check=True, capture_output=True, env=environment, timeout=60)
+            self.assertEqual(git(shallow, "rev-parse", "--is-shallow-repository").strip(), b"true")
+            self.assertIsNone(catalog_history(shallow))
+            self.assertIsNone(catalog_releases(shallow))
+            self.assertEqual(self.problems(shallow), [unreadable])
+            # The same holds when the release has no named entry at all: the catalog has no form-only fallback.
+            tree = Tree(EXAMPLE, history=lambda: catalog_history(shallow))
+            self.assertEqual(tree_problems(tree), [unreadable])
+            shutil.rmtree(shallow)
+
+    def test_the_example_trees_history_is_their_own_or_the_example_catalogs(self):
+        self.assertEqual([r.tag for r in Tree(NAMED).history()], ["v0.1.0"])
+        self.assertEqual(Tree(NAMED).history()[0].read("manifest.json", MAX_MANIFEST_BYTES), (EXAMPLE_RELEASES / "v0.1.0" / "manifest.json").read_bytes())
+        own = REFUSED / "artifact-content-changed-across-releases"
+        self.assertEqual([pair for release in Tree(own).history() for pair in release_pairs(release)], [
+            ("example.fx-withdrawn", (PAIR["id"], PAIR["version"]), load_strict((own / "releases/v0.1.0/entries/example/fx-withdrawn/entry.json").read_bytes())["dialect"]["digest"]),
+        ])
+
+    @unittest.skipUnless((ROOT / ".git").exists(), "not a git checkout: the repository's releases are read from its tags")
+    def test_the_repository_reads_its_history(self):
+        history = repository_history()
+        self.assertIsNotNone(history, "the tag listing cannot be read: fetch the catalog's tags (a full clone, not a shallow one)")
+        for release in history:
+            with self.subTest(release.tag):
+                release_pairs(release)
+
+    @unittest.skipUnless(os.environ.get("GITHUB_ACTIONS") == "true", "outside CI: whether the tags were fetched is the checkout's")
+    def test_ci_reads_every_earlier_release(self):
+        history = repository_history()
+        self.assertIsNotNone(history)
+        made = release_being_made()
+        if made is None or tag_order(made) > tag_order("v0.1.0"):
+            self.assertIn("v0.1.0", [release.tag for release in history])
+
+
+class NamedRefusalTrees(unittest.TestCase):
+    """Every refusal RFC 0019 names for entry format version 3 has a refused tree under tests/fixtures/refused/."""
+
+    def test_each_named_refusal_has_a_tree(self):
+        for code in NAMED_REFUSALS:
+            with self.subTest(code):
+                trees = [name for name, (_, _, expected) in REFUSED_TREES.items() if any(f"{code}: " in p for p in expected)]
+                self.assertTrue(trees, f"no refused tree is refused as {code}")
 
 
 class Scans(unittest.TestCase):

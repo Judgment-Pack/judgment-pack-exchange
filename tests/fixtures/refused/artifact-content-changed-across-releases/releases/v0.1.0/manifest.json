@@ -1,0 +1,20 @@
+[
+  {
+    "id": "example.fx-withdrawn",
+    "kind": "dialect",
+    "path": "entries/example/fx-withdrawn",
+    "entryDigest": "sha256:5c0e96052bd43efca60278708f4affda11b8e14ea4d5bfe8f9237cbae2841945",
+    "dialectDigest": "sha256:77a5597a0e6d8c51c1494d88318454f855d5c7f45f658e4309d9fd3920415fcb",
+    "fixtures": [
+      {
+        "name": "valid",
+        "files": [
+          "case.json",
+          "preparation.json",
+          "profiles.json",
+          "sources.json"
+        ]
+      }
+    ]
+  }
+]

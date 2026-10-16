@@ -1,14 +1,20 @@
 """The catalog's own form checker for a dialect document (RFC 0019 §§3–4).
 
 RFC 0019 holds every `dialect.json`, of an entry of kind `dialect` or `preset`, to the whole document
-form of RFC 0018 §§2–8 and 12 as its round 8 amends them, by the catalog's own form checker, written to
-RFC 0018's text, whether or not any fixture is replayed. This module is that checker. It is written
-from the dialect's companion text, `spec/dialect.md` at judgment-pack-spec commit 00c21b5, and takes
-nothing from the specification's readers: it imports none of them and runs none.
+form of RFC 0018 §§2–8 and 12 through round 11 and RFC 0021's §2.1 amendment, by the catalog's own form
+checker, written to their text, whether or not any fixture is replayed. This module is that checker. It
+is written from the dialect's companion text, `spec/dialect.md` (at judgment-pack-spec commit 00c21b5,
+and its §2.1 as RFC 0021 adds it), and takes nothing from the specification's readers: it imports none
+of them and runs none.
 
 What it reads (docs/entry-format.md, "The catalog's form checker"):
 
-- dialect versions 2 and 3; a document of another version is refused by name, `version-unread`;
+- the integer dialect versions 2 and 3; a document of another integer version is refused by name,
+  `version-unread`;
+- the named artifact formats of §2.1, `formatVersion` exactly "2.0.0" or "3.0.0" with the root members
+  `id` and `version` in place of the integer `version`: each the translation forms of the family it
+  selects, 2 or 3, with version 3's encoding rule over the whole document; family 2 gains neither unbound
+  nor research sources; another selector is refused, and no legacy format is guessed;
 - the case (§3) and the source kinds `operation`, bound and, in version 3, unbound (§4.1, §4.4);
   `selected-file`, of provider `local-file` or `google-drive` (§4.2); and `research`, in version 3, as
   round 8 gives it: requested fields, bound and unbound profile assignments, the plain read's closed
@@ -61,6 +67,11 @@ MAX_AGE = 86400
 MAX_TABLE_AGE = 315360000
 
 VERSIONS_READ = (2, 3)
+# §2.1: the named formats' exact selectors and the family each selects; an artifact id's bound; an artifact
+# version, Core's three components with no leading zero and no suffix, ASCII digits only.
+SELECTORS = {"2.0.0": 2, "3.0.0": 3}
+MAX_ID_BYTES = 1024
+ARTIFACT_VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)")
 # §4: the source kinds of each dialect version.
 KINDS = {
     2: ("operation", "selected-file"),
@@ -385,7 +396,11 @@ def is_int(value) -> bool:
 
 
 def version_read(document) -> None:
-    if isinstance(document, dict) and is_int(document.get("version")) and document["version"] not in VERSIONS_READ:
+    """An integer `version` the checker does not read. A named document's `version` is its artifact version,
+    never a dialect version: its form is held in the form phase (§2.1)."""
+    if not isinstance(document, dict) or "formatVersion" in document:
+        return
+    if is_int(document.get("version")) and document["version"] not in VERSIONS_READ:
         raise Refusal(
             "version-unread",
             f"dialect version {document['version']} is not one the catalog's form checker reads; it reads versions 2 and 3",
@@ -490,6 +505,7 @@ class Form:
     def __init__(self, document):
         self.document = document
         self.version = None
+        self.is_named = False
         self.case_types: dict[str, str] = {}
         self.fact_targets: dict[str, list[str]] = {}
         self.evidence_targets: dict[str, list[str]] = {}
@@ -503,18 +519,21 @@ class Form:
         if not isinstance(document, dict):
             raise malformed("the document is not an object (§2)")
         canon_domain(document, "the document")
-        closed(
-            document, "the document", ("version", "case"),
-            ("sources", "admits", "unmapped", "unmappedEvidence", "provider", "facts", "evidence"),
-        )
-        version = document["version"]
-        if not is_int(version) or version not in VERSIONS_READ:
-            raise malformed("version is not the integer 2 or 3 (§2)")
-        self.version = version
-        if version == 3:
+        optional = ("sources", "admits", "unmapped", "unmappedEvidence", "provider", "facts", "evidence")
+        if "formatVersion" in document:
+            closed(document, "the document", ("formatVersion", "id", "version", "case"), optional)
+            self.named_root(document)
+        else:
+            # §2.1: an integer-format document carries no formatVersion and no id, which closed() refuses.
+            closed(document, "the document", ("version", "case"), optional)
+            version = document["version"]
+            if not is_int(version) or version not in VERSIONS_READ:
+                raise malformed("version is not the integer 2 or 3 (§2)")
+            self.version = version
+        if self.one_way():
             for name in ("provider", "facts", "evidence"):
                 if name in document:
-                    raise malformed(f"version 3 is written one way: {name} is a member of version 2 alone (§2)")
+                    raise malformed(f"{self.written()} is written one way: {name} is a member of version 2 alone (§2)")
         else:
             if "provider" in document and document["provider"] != "":
                 raise malformed("provider is not the string \"\" (§2)")
@@ -538,11 +557,41 @@ class Form:
         if unread:
             raise Refusal("kind-unread", f"source kind {unread[0]} is not one the catalog's form checker reads; it reads operation, selected-file and research")
 
+    def named_root(self, document: dict) -> None:
+        """§2.1: `formatVersion` exactly "2.0.0" or "3.0.0", selecting the family; `id` a non-empty string of at
+        most 1024 UTF-8 bytes with no ASCII control character, space or DEL, compared as written; `version` a
+        string in Core's three-component grammar, with no leading zero, suffix or number for a string."""
+        selector = document["formatVersion"]
+        if not (isinstance(selector, str) and selector in SELECTORS):
+            raise malformed(f"formatVersion {selector!r} is not exactly \"2.0.0\" or \"3.0.0\"; no other selector is read and no legacy format is guessed (§2.1)")
+        identity = document["id"]
+        if not (isinstance(identity, str) and identity):
+            raise malformed("id is not a non-empty string (§2.1)")
+        if utf8_length(identity) > MAX_ID_BYTES:
+            raise malformed(f"id is {utf8_length(identity)} UTF-8 bytes, over {MAX_ID_BYTES} (§2.1)")
+        if any(ord(character) <= 0x20 or ord(character) == 0x7F for character in identity):
+            raise malformed("id holds an ASCII control character, a space or DEL (§2.1)")
+        version = document["version"]
+        if not (isinstance(version, str) and ARTIFACT_VERSION.fullmatch(version)):
+            raise malformed(f"version {version!r} is not an artifact version of three components, with no leading zero and no suffix (§2.1)")
+        self.version = SELECTORS[selector]
+        self.is_named = True
+
+    def one_way(self) -> bool:
+        """§2 and §2.1: version 3, and both named formats, are written one way."""
+        return self.version == 3 or self.is_named
+
+    def written(self) -> str:
+        return f"the named format {self.document['formatVersion']}" if self.is_named else "version 3"
+
+    def family(self) -> str:
+        return f"a document of the named format {self.document['formatVersion']}" if self.is_named else f"a version-{self.version} document"
+
     def one_spelling(self, where: str, value) -> None:
-        """§2: version 3 is kept only as its encoding writes it, so an optional array or object
-        written empty is refused where the encoding omits it."""
-        if self.version == 3 and value in ([], {}):
-            raise malformed(f"version 3 is written one way: {where} is written empty (§2)")
+        """§2: version 3, and both named formats (§2.1), are kept only as the encoding writes them, so an
+        optional array or object written empty is refused where the encoding omits it."""
+        if self.one_way() and value in ([], {}):
+            raise malformed(f"{self.written()} is written one way: {where} is written empty (§2)")
 
     def unmapped(self, document: dict) -> None:
         if "unmapped" in document:
@@ -578,7 +627,7 @@ class Form:
             if not isinstance(kind, str) or kind not in KINDS[3]:
                 raise malformed(f"source {name!r} is of kind {kind!r}, which RFC 0018 does not define (§4)")
             if kind not in KINDS[self.version]:
-                raise malformed(f"a version-2 document names source kind {kind}, a kind of version 3 (§4)")
+                raise malformed(f"{self.family()} names source kind {kind}, a kind of version 3 (§4, §2.1)")
             self.kinds[name] = kind
 
     # The case (§3) ---------------------------------------------------------------------------
@@ -669,7 +718,7 @@ class Form:
             )
         if form == "unbound":
             if self.version == 2:
-                raise malformed(f"a version-2 document has the unbound source {name!r} (§4)")
+                raise malformed(f"{self.family()} has the unbound source {name!r}: family 2 has no unbound form (§4, §2.1)")
             closed(source, f"source {name!r}", COMMON[:2] + ("read",) + CATALOG_MEMBERS + ("maxAge", "arguments"), ("parameters", "calculation"))
             for member in ("platform", "operation", "record"):
                 if not non_empty(source[member]):
