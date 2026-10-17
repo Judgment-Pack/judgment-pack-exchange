@@ -20,4 +20,6 @@ The prepared `/research` object preserves each field’s status, typed value and
 
 All derived targets admit generated data only. A supporting quote does not upgrade a generated value to record-class evidence. Access restrictions remain in force on every source, including procurement portals that require sign-in.
 
+A `page` assignment that reads more than one URL binds an `adapter-web` profile with `endpointScope` (prefixes, or `https://*` on a generated profile); a read through a grounding redirect needs that endpoint in scope; narrowing the scope per case is deferred. The recipe itself does not change for this.
+
 As a preset, this entry has no pack binding, executable fixtures or verification claim. Its form and canonical identity are checked by the catalog; preparation and decision tests belong to the reviewed local configuration.
