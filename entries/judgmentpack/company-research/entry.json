@@ -1,0 +1,21 @@
+{
+  "entryVersion": 3,
+  "kind": "preset",
+  "id": "judgmentpack.company-research",
+  "title": "Company research",
+  "description": "Prepare company facts for a locally reviewed qualification pack.",
+  "direction": "input",
+  "dialect": {
+    "path": "dialect.json",
+    "dialectVersion": 3,
+    "digest": "sha256:5e83124aa651c7a901276412ff395c8aaafc5c39643e7337bf4c02687302cb79"
+  },
+  "requires": {},
+  "sourceKinds": [
+    "research"
+  ],
+  "licence": "Apache-2.0",
+  "author": "Judgment Pack contributors",
+  "assertion": "The author asserts that these rules derive these facts and this evidence-availability from records of that shape, or these arguments from that disposition, and asserts nothing about any record's truth.",
+  "verification": []
+}
