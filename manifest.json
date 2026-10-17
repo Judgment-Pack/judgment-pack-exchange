@@ -3,24 +3,24 @@
     "id": "judgmentpack.company-research",
     "kind": "preset",
     "path": "entries/judgmentpack/company-research",
-    "entryDigest": "sha256:fa09df8961551df54f4977e849951566fcff6bd998e9c2dd7729e40e90cb4244",
-    "dialectDigest": "sha256:6c1252a8c584a683a078ed17ce31ba102e140f78dccdd602883bfbceba154fde",
+    "entryDigest": "sha256:368ff5e88ad3f0e79f74570e30f194eda334fa4f80db1a46a84b15d1c6c8ae60",
+    "dialectDigest": "sha256:85c8db10b474f409e66c16850d22bb56355b3f48758c9a0820b1d58b32ee8f73",
     "fixtures": []
   },
   {
     "id": "judgmentpack.people-at-company",
     "kind": "preset",
     "path": "entries/judgmentpack/people-at-company",
-    "entryDigest": "sha256:f15c4d93fcfe74b8a34bfcde2a2f4b10821b2332ddbb9b98496077abcaf71fbe",
-    "dialectDigest": "sha256:0c3f7089fb9000bbf6749aba67071c1ab17093f28599db4d2e4ed3506beb1d1c",
+    "entryDigest": "sha256:3a71bbee17d85d14d77592eab8da1d74625b156bdeb99dbad82564e086134c6c",
+    "dialectDigest": "sha256:0b0a0c1e59e7d6dae73461f4b6532ca662cabd7cd8a789e4fa3b33120dac0356",
     "fixtures": []
   },
   {
     "id": "judgmentpack.procurement-opportunity",
     "kind": "preset",
     "path": "entries/judgmentpack/procurement-opportunity",
-    "entryDigest": "sha256:db134210cb47b2341b506dd5f15d6f884ca2f88e27c0b137c76433e676d96301",
-    "dialectDigest": "sha256:51c646e0074a9a6957bd0047dec6fe13f6c39fe1203c34050c833107b64b40d6",
+    "entryDigest": "sha256:559b7502519ba8a0e328d57fa7c19302f26fa378a3f9346245c82c7333b3a88d",
+    "dialectDigest": "sha256:936aef8f4e6a4ec788249600ab7f3d1d64c4a008b06a4f6b960ee8b735b8d339",
     "fixtures": []
   }
 ]

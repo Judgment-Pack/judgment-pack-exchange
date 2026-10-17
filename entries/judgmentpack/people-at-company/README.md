@@ -12,11 +12,11 @@ Supply one case with a `request` string, for example:
 }
 ```
 
-Each run prepares one research record. Run separately for each selected company or person; importing a preset neither selects records nor authorizes outreach. The request is reviewed task scope. Model output cannot broaden it.
+Each run prepares one research record about one person; if several people match, the fields answer not-found and the request is narrowed. Run separately for each selected company or person; importing a preset neither selects records nor authorizes outreach. The request is reviewed task scope. Model output cannot broaden it.
 
 The definition requests `gemini-2.5-flash` and answer, search and page capabilities. The installation must bind profiles declaring that exact model and those capabilities. To use another model, review and save a local derivative with a new canonical identity before acquisition. Credentials and connection IDs stay local.
 
-The prepared `/research` object preserves each field’s status, typed value and response citations. Missing, stale or conflicting fields stay explicit. Integer counts remain JSON integers; range endpoints are either both JSON integers or both decimal strings under the Dialect contract. No value is coerced or manufactured. A local pack must interpret these fields and any evidence-availability requirements explicitly; successful preparation does not establish factual truth.
+The prepared `/research` object preserves each field’s status, typed value and response citations. Missing, stale or conflicting fields stay explicit. No value is coerced or manufactured. A local pack must interpret these fields and any evidence-availability requirements explicitly; successful preparation does not establish factual truth.
 
 All derived targets admit generated data only. A supporting quote does not upgrade a generated value to record-class evidence. Access restrictions remain in force, including on professional-network sites.
 

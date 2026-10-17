@@ -12,7 +12,7 @@ Supply one case with a `request` string, for example:
 }
 ```
 
-Each run prepares one research record. Run separately for each selected company or person; importing a preset neither selects records nor authorizes outreach. The request is reviewed task scope. Model output cannot broaden it.
+Each run prepares one research record about the one company the request names or describes. Run separately for each company; importing a preset neither selects records nor authorizes outreach. The request is reviewed task scope. Model output cannot broaden it.
 
 The definition requests `gemini-2.5-flash` and answer, search and page capabilities. The installation must bind profiles declaring that exact model and those capabilities. To use another model, review and save a local derivative with a new canonical identity before acquisition. Credentials and connection IDs stay local.
 
