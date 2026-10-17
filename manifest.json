@@ -11,8 +11,8 @@
     "id": "judgmentpack.people-at-company",
     "kind": "preset",
     "path": "entries/judgmentpack/people-at-company",
-    "entryDigest": "sha256:f15c4d93fcfe74b8a34bfcde2a2f4b10821b2332ddbb9b98496077abcaf71fbe",
-    "dialectDigest": "sha256:0c3f7089fb9000bbf6749aba67071c1ab17093f28599db4d2e4ed3506beb1d1c",
+    "entryDigest": "sha256:3a71bbee17d85d14d77592eab8da1d74625b156bdeb99dbad82564e086134c6c",
+    "dialectDigest": "sha256:0b0a0c1e59e7d6dae73461f4b6532ca662cabd7cd8a789e4fa3b33120dac0356",
     "fixtures": []
   }
 ]
