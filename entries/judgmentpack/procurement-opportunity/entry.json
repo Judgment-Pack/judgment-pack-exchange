@@ -8,7 +8,7 @@
   "dialect": {
     "path": "dialect.json",
     "dialectVersion": 3,
-    "digest": "sha256:1090d237ecc99a3ea45380a54f17a416bef8295d19cac7c0993d414ccf2fcc57"
+    "digest": "sha256:69cc15cd456617dd8fe910a05981e877711ce6ef5a876bc6ebac8cc18dd24057"
   },
   "requires": {},
   "sourceKinds": [
