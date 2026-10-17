@@ -3,8 +3,8 @@
     "id": "judgmentpack.company-research",
     "kind": "preset",
     "path": "entries/judgmentpack/company-research",
-    "entryDigest": "sha256:fa09df8961551df54f4977e849951566fcff6bd998e9c2dd7729e40e90cb4244",
-    "dialectDigest": "sha256:6c1252a8c584a683a078ed17ce31ba102e140f78dccdd602883bfbceba154fde",
+    "entryDigest": "sha256:368ff5e88ad3f0e79f74570e30f194eda334fa4f80db1a46a84b15d1c6c8ae60",
+    "dialectDigest": "sha256:85c8db10b474f409e66c16850d22bb56355b3f48758c9a0820b1d58b32ee8f73",
     "fixtures": []
   },
   {
