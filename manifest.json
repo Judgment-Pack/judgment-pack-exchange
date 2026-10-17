@@ -6,5 +6,13 @@
     "entryDigest": "sha256:368ff5e88ad3f0e79f74570e30f194eda334fa4f80db1a46a84b15d1c6c8ae60",
     "dialectDigest": "sha256:85c8db10b474f409e66c16850d22bb56355b3f48758c9a0820b1d58b32ee8f73",
     "fixtures": []
+  },
+  {
+    "id": "judgmentpack.people-at-company",
+    "kind": "preset",
+    "path": "entries/judgmentpack/people-at-company",
+    "entryDigest": "sha256:3a71bbee17d85d14d77592eab8da1d74625b156bdeb99dbad82564e086134c6c",
+    "dialectDigest": "sha256:0b0a0c1e59e7d6dae73461f4b6532ca662cabd7cd8a789e4fa3b33120dac0356",
+    "fixtures": []
   }
 ]
