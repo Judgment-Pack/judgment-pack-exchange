@@ -14,5 +14,13 @@
     "entryDigest": "sha256:3a71bbee17d85d14d77592eab8da1d74625b156bdeb99dbad82564e086134c6c",
     "dialectDigest": "sha256:0b0a0c1e59e7d6dae73461f4b6532ca662cabd7cd8a789e4fa3b33120dac0356",
     "fixtures": []
+  },
+  {
+    "id": "judgmentpack.procurement-opportunity",
+    "kind": "preset",
+    "path": "entries/judgmentpack/procurement-opportunity",
+    "entryDigest": "sha256:559b7502519ba8a0e328d57fa7c19302f26fa378a3f9346245c82c7333b3a88d",
+    "dialectDigest": "sha256:936aef8f4e6a4ec788249600ab7f3d1d64c4a008b06a4f6b960ee8b735b8d339",
+    "fixtures": []
   }
 ]
