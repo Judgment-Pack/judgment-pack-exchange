@@ -43,7 +43,7 @@
       "runner": "v0.11.0",
       "runtime": "v0.32.0",
       "readers": [
-        "Judgment-Pack/judgment-pack-spec/tools/dialect+verify.py@c51c81de244a0da279f8b926507e3fe2142348d1"
+        "Judgment-Pack/judgment-pack-spec/tools/dialect+verify.py@002ab1908bcef729e768d6ae39a99e3212f36553"
       ],
       "result": "agree"
     }
