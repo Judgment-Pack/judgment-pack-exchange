@@ -77,8 +77,8 @@ CI runs the checks on Python 3.12, with the specification checked out at the com
 ```bash
 git clone https://github.com/Judgment-Pack/judgment-pack-spec.git .spec
 git -C .spec checkout 4bec33ae9ff5947ddcb6b812c558a9aab6ce56d1
-python -m pip install -r requirements-dev.txt
-python -m unittest discover -s tests -v
+scripts/dev/check.sh --setup   # installs requirements-dev.txt
+scripts/dev/check.sh           # every check CI runs, from dev.json; paste its summary block in the pull request
 ```
 
 `.spec/` is ignored and never committed. Without it the preparation-verifier test is skipped, so a

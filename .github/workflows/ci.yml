@@ -1,5 +1,10 @@
 name: CI
 
+# The check list is dev.json, run by scripts/dev/check.sh (the development kit's vendored runner).
+# One job, `entries`, which branch protection requires by name. The two checkouts are read by the
+# tests (tests/test_entries.py, VerifierPin): the `ref` of the specification checkout is the pin
+# CONTRIBUTING.md and the verification record's locator must name too.
+
 on:
   push:
   pull_request:
@@ -32,13 +37,29 @@ jobs:
           path: .spec
           persist-credentials: false
 
+      # First, so that a manifest that does not parse fails before the long steps start.
+      - name: The manifest parses and its first step runs
+        run: scripts/dev/check.sh --manifest dev.json --only local-paths
+
+      - name: Read the toolchains from dev.json
+        id: dev
+        run: |
+          set -eu
+          python3 - >> "$GITHUB_OUTPUT" <<'PY'
+          import json
+          m = json.load(open("dev.json", encoding="utf-8"))
+          tc = m.get("toolchains", {})
+          print("python=" + tc.get("python", {}).get("version", "3.12"))
+          PY
+
       - name: Set up Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: ${{ steps.dev.outputs.python }}
 
-      - name: Install test dependencies
-        run: python -m pip install --disable-pip-version-check -r requirements-dev.txt
+      - name: Setup steps
+        run: scripts/dev/check.sh --setup
 
-      - name: Check the manifest, the entries and their fixtures
-        run: python -m unittest discover -s tests -v
+      # The manifest, the entries and their fixtures (the `entries` step of dev.json).
+      - name: Checks
+        run: scripts/dev/check.sh --all
