@@ -78,6 +78,13 @@ To run the tests, check out the specification at the commit `ci.yml` pins into `
 `.spec/` the preparation-verifier test is skipped and says so; in a shallow clone, which may omit
 release history and tags, the artifact-history check refuses the release.
 
+`scripts/dev/check.sh` runs every check CI runs, in order, and prints one summary block of passes,
+failures and skips; `--setup` installs the test dependencies first. The checks are listed in
+`dev.json`, the manifest of the Judgment Pack development kit (v0.1.0), whose runner is vendored
+here unchanged. `AGENTS.md` and `CLAUDE.md` carry the same instructions for agent sessions, shared
+rules first and this repository's own after them; CI checks that the two are identical
+(`scripts/sync-agent-docs.sh` writes `CLAUDE.md` from `AGENTS.md`).
+
 ## Licence
 
 Apache License 2.0, see [`LICENSE`](LICENSE). An entry carries its own SPDX licence in `entry.json`.
