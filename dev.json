@@ -11,5 +11,9 @@
     {"name": "agent-docs", "run": "scripts/sync-agent-docs.sh --check .", "toolchain": "shell", "summary": "^sync-agent-docs:"},
     {"name": "diff-check", "run": "git diff --check \"$(git hash-object -t tree /dev/null)\"", "toolchain": "shell"},
     {"name": "entries", "run": "python3 -m unittest discover -s tests -v", "toolchain": "python", "summary": "^(Ran |OK|FAILED)", "timeout": 1800}
-  ]
+  ],
+  "handover": {
+    "boundary_paths": ["scripts"],
+    "shared_paths": ["entries", "tests/fixtures"]
+  }
 }
