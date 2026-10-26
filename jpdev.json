@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "changed": [
+    {
+      "paths": ["entries/**", "manifest.json"],
+      "checks": ["local-paths", "agent-docs", "diff-check", "entries"]
+    },
+    {
+      "paths": ["tests/**"],
+      "checks": ["local-paths", "agent-docs", "diff-check", "entries"]
+    },
+    {
+      "paths": ["*.md", "docs/**"],
+      "checks": ["local-paths", "agent-docs", "diff-check", "entries"]
+    },
+    {
+      "paths": ["scripts/sync-agent-docs.sh", "scripts/dev/handover_check.sh", "requirements-dev.txt"],
+      "checks": ["local-paths", "agent-docs", "diff-check", "entries"]
+    },
+    {
+      "paths": ["LICENSE", "NOTICE", ".github/ISSUE_TEMPLATE/**", ".github/PULL_REQUEST_TEMPLATE.md", ".github/dependabot.yml"],
+      "checks": ["local-paths", "agent-docs", "diff-check", "entries"]
+    }
+  ]
+}
