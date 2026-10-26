@@ -1,0 +1,80 @@
+{
+  "$comment": [
+    "The release evidence gate's configuration, read at the release commit by scripts/dev/release_evidence.py",
+    "(from judgment-pack-devkit; docs/releasing.md). The release takes main's evidence for the checks that read",
+    "the commit's tree alone. The entries tests read the tags and the release history, which the release's tag",
+    "changes, so the evidence leaves them out and the release runs them at the tag (ci.yml HISTORY_CHECKS)."
+  ],
+  "schema": 2,
+  "repository": "Judgment-Pack/judgment-pack-exchange",
+  "branch": "main",
+  "max_age_hours": 48,
+  "inputs": [
+    "requirements-dev.txt",
+    "scripts/dev/check.sh",
+    "scripts/sync-agent-docs.sh"
+  ],
+  "fresh_at_release": [
+    "entries: the tests, which read the tags, the release history and the specification at the pin, run at the tag (CI at the tag)",
+    "tag grammar, tag names the commit, commit on main",
+    "release notes",
+    "release environment reviewer",
+    "manifest bytes",
+    "checksums",
+    "attestation",
+    "no existing release, draft identity",
+    "published asset digests"
+  ],
+  "profiles": {
+    "linux": {
+      "$comment": "The release's evidence job sets up Python as ci.yml does, and resolves the same image and tools.",
+      "platform": {
+        "RUNNER_OS": "Linux",
+        "RUNNER_ARCH": "X64"
+      },
+      "compare": "release-runner",
+      "tools": {
+        "bash": [
+          "bash",
+          "--version"
+        ],
+        "git": [
+          "git",
+          "--version"
+        ],
+        "cmp": [
+          "cmp",
+          "--version"
+        ],
+        "python": [
+          "python3",
+          "--version"
+        ]
+      }
+    }
+  },
+  "workflows": {
+    "ci": {
+      "path": ".github/workflows/ci.yml",
+      "name": "CI",
+      "events": [
+        "push"
+      ],
+      "jobs": {
+        "entries": {
+          "name": "entries",
+          "job_id": "entries",
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "profile": "linux",
+          "checks": [
+            "local-paths",
+            "agent-docs",
+            "diff-check"
+          ]
+        }
+      }
+    }
+  }
+}

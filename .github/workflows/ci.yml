@@ -4,19 +4,38 @@ name: CI
 # One job, `entries`, which branch protection requires by name. The two checkouts are read by the
 # tests (tests/test_entries.py, VerifierPin): the `ref` of the specification checkout is the pin
 # CONTRIBUTING.md and the verification record's locator must name too.
+#
+# A push to main records the evidence the release takes for the checks that read the commit's tree
+# alone (scripts/dev/release_evidence.py capture; .github/ci-evidence.json; docs/releasing.md). The
+# checks named in HISTORY_CHECKS read the catalog's tags and release history, which the release's
+# tag changes, so the release runs them again in the tag's own context: release.yml calls this
+# workflow with `tag-context: true` (exchange #38).
 
 on:
+  # Branches only: a tag push no longer starts this workflow. The release workflow's call at the tag
+  # is the one run in the tag's context, and the release waits for it (release.yml, `CI at the tag`).
   push:
+    branches: ["**"]
   pull_request:
-  # The release workflow calls this one at a tag (release.yml).
   workflow_call:
+    inputs:
+      tag-context:
+        description: "Run only HISTORY_CHECKS, the checks that read the tags and the release history (the release, after its evidence gate)."
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 jobs:
   entries:
+    name: entries
     runs-on: ubuntu-latest
+    env:
+      # The dev.json checks whose result depends on the tag a run is held for and on the catalog's
+      # earlier releases, read from its tags (tests/test_entries.py, release_being_made). Main's
+      # evidence leaves them out; the release runs them at the tag.
+      HISTORY_CHECKS: entries
     steps:
       # Every commit and tag: an entry's `upgrade` keys are checked against the manifests of the
       # catalog's earlier releases, and every artifact pair against the entries those manifests pin,
@@ -59,16 +78,41 @@ jobs:
 
       # The manifest, the entries and their fixtures (the `entries` step of dev.json). A pull request
       # runs the checks jpdev.json maps its changed paths to (the whole list when a path is unmapped,
-      # or when the mapping, the manifest or the runner changed); a push, and the release workflow's
-      # call at a tag, run the whole list. The first checkout's whole history gives --changed the
-      # merge base with the base branch.
+      # or when the mapping, the manifest or the runner changed); the first checkout's whole history
+      # gives --changed the merge base with the base branch. A push runs the whole list, in two
+      # parts: the checks that read the tree, whose summary is the evidence log, then
+      # HISTORY_CHECKS; a failure in the first part does not stop the second. The release
+      # workflow's call at the tag runs HISTORY_CHECKS alone.
       - name: Checks
         env:
           EVENT: ${{ github.event_name }}
           BASE_REF: ${{ github.base_ref }}
+          TAG_CONTEXT: ${{ inputs.tag-context }}
+          CHECK_LOG: ${{ runner.temp }}/checks.log
         run: |
+          set -o pipefail
           if [ "$EVENT" = pull_request ]; then
             scripts/dev/check.sh --all --changed "origin/$BASE_REF"
+          elif [ "$TAG_CONTEXT" = true ]; then
+            scripts/dev/check.sh --all --only "$HISTORY_CHECKS"
           else
-            scripts/dev/check.sh --all
+            status=0
+            scripts/dev/check.sh --all --skip "$HISTORY_CHECKS" | tee "$CHECK_LOG" || status=1
+            scripts/dev/check.sh --all --only "$HISTORY_CHECKS" || status=1
+            exit "$status"
           fi
+
+      # Main only, after every check passed: the evidence of the checks that read the tree, which
+      # the release takes instead of running them again (docs/releasing.md).
+      - name: Record exact CI inputs and coverage
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: python3 scripts/dev/release_evidence.py capture --workflow ci --job entries --check-log "${{ runner.temp }}/checks.log" --output "${{ runner.temp }}/evidence.json"
+
+      - name: Upload immutable CI evidence
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ci-evidence-ci-entries-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/evidence.json
+          if-no-files-found: error
+          retention-days: 7
