@@ -70,6 +70,32 @@ def history_checks(ci: str) -> list[str]:
     return found[0].split(",") if len(found) == 1 else []
 
 
+# The dev.json commands of the checks a release takes from main's evidence, pinned. Each reads the
+# commit's tracked tree and nothing a tag, the ref a run is held for or the release history changes,
+# so a run before the tag gives the result a run at the tag would. Editing one of them means editing
+# this pin too, and so classifying the check again: a command that reads the tags or the history
+# belongs in HISTORY_CHECKS, which the release runs at the tag.
+TREE_CHECKS = {
+    "local-paths": "if git grep -nE '(^|[^A-Za-z0-9_])/(home|tmp)/[A-Za-z0-9_.-]+' -- . ':!*.png' ':!*.jpg'; "
+                   "then echo 'a machine-local path is in tracked text'; exit 1; fi",
+    "agent-docs": "scripts/sync-agent-docs.sh --check .",
+    "diff-check": 'git diff --check "$(git hash-object -t tree /dev/null)"',
+}
+
+# A read of a tag, of the ref a run is held for, of the history or of the specification checkout.
+HISTORY_READ = re.compile(
+    r"\bgit\s+(?:-C\s+\S+\s+)?(?:tag|describe|log|rev-list|for-each-ref|ls-remote|show-ref|reflog|fetch|name-rev"
+    r"|cat-file|show|blame|merge-base)\b|GITHUB_|refs/(?:tags|heads|remotes)/|\.spec\b|\bHEAD[~^@]")
+
+
+def history_reads(text: str) -> list[str]:
+    return [match.group(0) for match in HISTORY_READ.finditer(text)]
+
+
+def scripts_named(text: str) -> list[str]:
+    return sorted(set(re.findall(r"(?:^|[\s\"'])(scripts/[A-Za-z0-9_./-]+)", text)))
+
+
 class EvidenceConfiguration(unittest.TestCase):
     """.github/ci-evidence.json against the real ci.yml, dev.json and tree, so the two cannot drift."""
 
@@ -183,6 +209,51 @@ class EvidenceConfiguration(unittest.TestCase):
         self.assertEqual(steps[-3:], ["Checks", "Record exact CI inputs and coverage", "Upload immutable CI evidence"])
 
 
+class ReusedChecksReadTheTree(unittest.TestCase):
+    """The checks the release reuses read the commit's tree alone (exchange #38): pinned, and scanned."""
+
+    config = json.loads(CONFIG.read_text(encoding="utf-8"))
+    rows = {row["name"]: row for row in json.loads((ROOT / "dev.json").read_text(encoding="utf-8"))["checks"]}
+
+    def reused(self) -> list[str]:
+        return sorted({check for workflow in self.config["workflows"].values()
+                       for spec in workflow["jobs"].values() for check in spec["checks"]})
+
+    def test_the_reused_commands_are_pinned(self):
+        self.assertEqual(self.reused(), sorted(TREE_CHECKS))
+        for name, run in TREE_CHECKS.items():
+            with self.subTest(name):
+                self.assertEqual(self.rows[name]["run"], run, "a reused check's command changed: classify it again")
+                self.assertEqual(self.rows[name]["toolchain"], "shell")
+                self.assertFalse({"cwd", "requires_env", "optional"} & set(self.rows[name]))
+
+    def test_no_reused_command_or_script_it_runs_reads_a_tag_or_the_history(self):
+        for name in self.reused():
+            run = self.rows[name]["run"]
+            with self.subTest(name):
+                self.assertEqual(history_reads(run), [])
+                for script in scripts_named(run):
+                    with self.subTest(script=script):
+                        text = (ROOT / script).read_text(encoding="utf-8")
+                        self.assertEqual(history_reads(text), [])
+                        # It runs no other script of the repository, which would need the same scan.
+                        self.assertLessEqual(set(scripts_named(text)), {script})
+
+    def test_the_scan_catches_each_read(self):
+        # Hand-written: each a read the reused checks must not make, then commands that read the tree.
+        for sample in ["git tag --points-at HEAD", "git describe --tags", "git log -1 --format=%H",
+                       "git -C . rev-list --count HEAD", "git for-each-ref refs/tags", "git ls-remote origin",
+                       "git show-ref --tags", "git cat-file -t v0.1.0", "git show v0.1.0:manifest.json",
+                       "git merge-base --is-ancestor HEAD main", 'case "$GITHUB_REF" in', "refs/tags/v0.1.0",
+                       "ls .spec/tools", "git diff HEAD~1", "git fetch --tags"]:
+            with self.subTest(sample):
+                self.assertTrue(history_reads(sample))
+        for sample in [*TREE_CHECKS.values(), "git grep -n x -- .", "cmp -s AGENTS.md CLAUDE.md",
+                       "git hash-object -t tree /dev/null", "git diff --check"]:
+            with self.subTest(sample):
+                self.assertEqual(history_reads(sample), [])
+
+
 class ReleaseWorkflow(unittest.TestCase):
     """release.yml takes the evidence before the tag-context run and the package, and fails closed."""
 
@@ -229,6 +300,32 @@ class ReleaseWorkflow(unittest.TestCase):
         self.assertIn("          TAG_CONTEXT: ${{ inputs.tag-context }}\n", checks)
         self.assertIn('          elif [ "$TAG_CONTEXT" = true ]; then\n'
                       '            scripts/dev/check.sh --all --only "$HISTORY_CHECKS"\n', checks)
+
+    def test_no_job_after_the_gate_can_run_past_a_refusal(self):
+        # A refusal fails the gate job; each later job needs it, directly or through the job it needs,
+        # and none has a job-level condition (always(), !cancelled(), failure()) that would run it
+        # when a job it needs failed or was skipped, nor continue-on-error.
+        jobs = re.findall(r"^  ([A-Za-z0-9_-]+):\n", self.release.split("\njobs:\n", 1)[1], re.M)
+        self.assertEqual(jobs, ["admit", "evidence", "verify", "package", "attest-and-draft", "publish"])
+        graph = {job: needs(job_block(self.release, job)) for job in jobs}
+
+        def upstream(job: str) -> set[str]:
+            found, pending = set(), list(graph[job])
+            while pending:
+                name = pending.pop()
+                if name not in found:
+                    found.add(name)
+                    pending.extend(graph[name])
+            return found
+
+        for job in jobs:
+            block = job_block(self.release, job)
+            with self.subTest(job):
+                self.assertTrue(block)
+                self.assertEqual(re.findall(r"^    if:.*$", block, re.M), [])
+                self.assertNotIn("continue-on-error", block)
+                if job not in ("admit", "evidence"):
+                    self.assertIn("evidence", upstream(job))
 
     def test_a_tag_push_starts_no_second_run_at_the_tag(self):
         # The release's call is the one run in the tag's context; ci.yml's push trigger is held to
