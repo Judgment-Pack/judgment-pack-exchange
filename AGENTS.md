@@ -73,3 +73,13 @@ summary block, and anything you stopped on or chose not to do.
   verification record's locator, and a test holds the three to one commit.
 - One entry per pull request; fixtures are required for an entry of kind `dialect`. No
   credentials, tokens or personal data in any file; the scans' silence proves nothing.
+- A pull request's CI runs `scripts/dev/check.sh --all --changed origin/<base>`: the checks
+  `jpdev.json` maps its changed paths to, and the whole list when a path matches no rule or when
+  `jpdev.json`, `dev.json`, `scripts/dev/check.sh` or `scripts/dev/changed_checks.py` changed. A
+  push, and the release workflow's call at a tag, run the whole list. `jpdev check --changed` (or
+  `scripts/dev/check.sh --changed`) makes the same selection locally. Every rule names all four
+  checks: `local-paths` and `diff-check` read every tracked file, the `entries` tests scan every
+  file for credential shapes and local paths and resolve every Markdown link, and `agent-docs` is
+  kept in every rule as in the other repositories. The mapping therefore selects the whole list for
+  every path today; a new check that reads only some paths gets its own rules, from the files its
+  command opens.
