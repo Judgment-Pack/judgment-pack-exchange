@@ -57,6 +57,18 @@ jobs:
       - name: Setup steps
         run: scripts/dev/check.sh --setup
 
-      # The manifest, the entries and their fixtures (the `entries` step of dev.json).
+      # The manifest, the entries and their fixtures (the `entries` step of dev.json). A pull request
+      # runs the checks jpdev.json maps its changed paths to (the whole list when a path is unmapped,
+      # or when the mapping, the manifest or the runner changed); a push, and the release workflow's
+      # call at a tag, run the whole list. The first checkout's whole history gives --changed the
+      # merge base with the base branch.
       - name: Checks
-        run: scripts/dev/check.sh --all
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          if [ "$EVENT" = pull_request ]; then
+            scripts/dev/check.sh --all --changed "origin/$BASE_REF"
+          else
+            scripts/dev/check.sh --all
+          fi
