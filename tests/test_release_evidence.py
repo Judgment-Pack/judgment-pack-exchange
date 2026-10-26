@@ -27,8 +27,8 @@ GATE = ROOT / "scripts" / "dev" / "release_evidence.py"
 # The kit release the gate is vendored from, and the git blob id of lib/release_evidence.py at that
 # release's tag (`git rev-parse v0.10.0:lib/release_evidence.py` in a clone of the kit). A re-vendor
 # changes both, from the kit's tag, with the other vendored scripts.
-KIT_RELEASE = "v0.10.0"
-KIT_BLOB = "d00e4d489ab5d34ecb56ec55e4c97b2dc9b88261"
+KIT_RELEASE = "v0.11.0"
+KIT_BLOB = "55fd77db1b97bf1824a0456c0b8426b3fdf3d6da"
 
 
 def load_gate():
