@@ -34,10 +34,22 @@
       },
       "compare": "release-runner",
       "tools": {
-        "bash": ["bash", "--version"],
-        "git": ["git", "--version"],
-        "cmp": ["cmp", "--version"],
-        "python": ["python3", "--version"]
+        "bash": [
+          "bash",
+          "--version"
+        ],
+        "git": [
+          "git",
+          "--version"
+        ],
+        "cmp": [
+          "cmp",
+          "--version"
+        ],
+        "python": [
+          "python3",
+          "--version"
+        ]
       }
     }
   },
@@ -45,14 +57,22 @@
     "ci": {
       "path": ".github/workflows/ci.yml",
       "name": "CI",
-      "events": ["push"],
+      "events": [
+        "push"
+      ],
       "jobs": {
         "entries": {
           "name": "entries",
           "job_id": "entries",
-          "labels": ["ubuntu-latest"],
+          "labels": [
+            "ubuntu-latest"
+          ],
           "profile": "linux",
-          "checks": ["local-paths", "agent-docs", "diff-check"]
+          "checks": [
+            "local-paths",
+            "agent-docs",
+            "diff-check"
+          ]
         }
       }
     }
