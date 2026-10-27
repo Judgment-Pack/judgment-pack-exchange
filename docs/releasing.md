@@ -56,7 +56,8 @@ question 1).
    python -m unittest discover -s tests -v
    ```
 
-3. Merge the pull request.
+3. Merge the pull request, and let main's CI run at the merge commit complete: the release takes
+   its evidence ([below](#the-release-evidence-gate)), and refuses while that run is unfinished.
 
 ## Tag
 
@@ -69,7 +70,9 @@ git push origin <tag>
 ```
 
 If no signing key is configured, stop and settle the signing policy. Do not replace a signed tag
-with an unsigned one. Signing is the maintainer's practice; the workflow does not check it.
+with an unsigned one. Signing is the maintainer's practice; the workflow does not check it. The tag
+must be annotated, as `git tag -s` and `git tag -a` make it: the evidence gate refuses a lightweight
+tag.
 
 A tag has the [release-tag grammar](entry-format.md#release-tags-and-compatibility-ranges):
 `vMAJOR.MINOR.PATCH`, in ASCII digits with no leading zeroes, and nothing after; the grammar has no
@@ -87,23 +90,29 @@ Every job works on the commit the run was started for, by its digest, not on the
 1. **Admits the tag.** It is in the grammar, checked in the shell and again by `release_tag_ok` in
    [`tests/test_entries.py`](../tests/test_entries.py); it names the commit the run was started for;
    that commit is on `main`; its notes exist; and the `release` environment has a reviewer rule.
-2. **Runs CI at that commit.** The release calls the commit's own
-   [`ci.yml`](../.github/workflows/ci.yml): the `entries` checks, with the specification at the
-   commit it pins. Each entry's `upgrade` keys are checked against the releases below the tag, and
-   every artifact pair against the entries those releases pinned, all read from the repository's
-   tags ([upgrade keys](entry-format.md#authoring-metadata),
+2. **Takes main's CI evidence at that commit, or refuses** (`CI evidence at the tag`). The
+   [release evidence gate](#the-release-evidence-gate) reads the CI run main's push made at this
+   exact commit, and its recorded evidence of the checks that read the commit's tree. Anything
+   missing, partial, stale or different refuses, naming its code, and the release stops there.
+3. **Runs the checks that read the tags, at the tag** (`CI at the tag`). The release calls the
+   commit's own [`ci.yml`](../.github/workflows/ci.yml) with `tag-context: true`: the `entries`
+   tests, with the repository's whole history and tags and the specification at the commit it pins.
+   Each entry's `upgrade` keys are checked against the releases below the tag, and every artifact
+   pair against the entries those releases pinned, all read from the repository's tags
+   ([upgrade keys](entry-format.md#authoring-metadata),
    [named artifacts](entry-format.md#named-artifacts)): other content under a published pair is
    `artifact-content-changed`, and an earlier release that cannot be read is
-   `artifact-history-invalid`. A check `main` has gained since that commit is not run.
-3. **Writes the release's files.** `manifest.json` is read as the blob of the tagged commit
+   `artifact-history-invalid`. This is the one CI run in the tag's context: `ci.yml` does not run on
+   a tag push. A check `main` has gained since that commit is not run.
+4. **Writes the release's files.** `manifest.json` is read as the blob of the tagged commit
    (`git cat-file blob <commit>:manifest.json`) and compared with the checkout; `checksums.txt` is
    written over it and checked.
-4. **Attests and drafts.** Only if the tag still names the commit and no release exists under the
+5. **Attests and drafts.** Only if the tag still names the commit and no release exists under the
    tag, both files are attested, each by its own path, and a draft release is created with the
    notes from the commit. The job records the draft's release id for the publish job.
-5. **Waits at the `release` gate.** Review the draft on the Releases page: the notes and the two
+6. **Waits at the `release` gate.** Review the draft on the Releases page: the notes and the two
    assets. Approve the pending deployment on the run.
-6. **Compares the draft with the run, and publishes it by its id.** A draft can be changed while it
+7. **Compares the draft with the run, and publishes it by its id.** A draft can be changed while it
    waits, by anyone who can write to the repository. After the gate, the tag is compared with the
    commit once more, and the run's own files are held to their checksums. The release the run
    drafted is then read through the releases API by its id, without downloading anything: it must
@@ -112,13 +121,52 @@ Every job works on the commit the run was started for, by its digest, not on the
    its assets must be the digest of the run's file of that name, no asset more or fewer. Any
    difference refuses. The publish call follows that last read at once, addressed to the same
    release id, not to the tag, and marks the release latest.
-7. **Reads the published release again.** Immediately after publication the job reads the
+8. **Reads the published release again.** Immediately after publication the job reads the
    published release's asset digests through the API once more, and fails the step `Require the
    published release to hold what this run wrote`, printing both digest sets, if they differ from
    the run's files.
 
 An approval given more than thirty days after the run finds the run's files gone, and the job
 fails: release a new version.
+
+### The release evidence gate
+
+`CI evidence at the tag` runs `scripts/dev/release_evidence.py verify`, the development kit's gate
+(vendored from its release, as line 2 says), with this repository's configuration,
+[`.github/ci-evidence.json`](../.github/ci-evidence.json). The gate's contract is the kit's
+[release evidence gate](https://github.com/Judgment-Pack/judgment-pack-devkit/blob/v0.10.0/docs/ci-evidence.md).
+In short, it reuses evidence only from a completed, successful run of `ci.yml` (resolved by its path
+and its name) in this repository, started by a push to `main` at the release commit itself, at the
+newest attempt of the newest such run, never past a newer failed, cancelled or running one, at most
+48 hours old. Its `entries` job must have succeeded on a GitHub-hosted `ubuntu-latest` runner, and
+its evidence artifact must record the commit's input identities, the same runner image and tools as
+the release job's (bash, git, cmp and the Python `dev.json` names), and a pass for each check the
+configuration lists. The tag must be annotated, name the commit, and still be the same tag object
+when the gate ends. The decision record, reuse or refusal, is in the step's log and in the run's
+`release-evidence-<attempt>` artifact.
+
+| Check at the release commit | Main's push CI | Before the gate: the tag push's CI and the release's call | With the gate |
+| --- | --- | --- | --- |
+| `local-paths`, `agent-docs`, `diff-check` (read the tree) | run, and recorded as evidence | run twice more | taken from main's evidence, not run again |
+| `entries` (the tests: tags, release history, the specification at the pin) | run, for the tags then present, with no release being made | run twice more, at the tag | run once more, at the tag (`CI at the tag`) |
+| tag, notes, environment reviewer, manifest bytes, checksums, attestation, draft and published identity | not run | run by the release | run by the release, unchanged |
+
+What the gate does not decide stays fresh in the release: the tag and its grammar, the commit on
+`main`, the notes, the environment's reviewer rule, the checks that read the tags, the package, the
+checksums, the attestation and the draft and published assets. The gate caches nothing.
+
+**The fresh route.** A refusal stops that release run, and nothing runs CI again on its own. Read
+the refusal (the step's last line, or the record) and choose once:
+
+1. Re-run all jobs of main's CI run at the commit
+   (`gh run rerun <run id> --repo Judgment-Pack/judgment-pack-exchange`). This also works after
+   `main` moved on, and is the route for an evidence run too old (`run-age`) or a hosted image that
+   changed since it ran (`runtime-identity`). `run-unfinished` usually means the tag was pushed while
+   main's CI at the commit was still running: wait for it instead.
+2. When that run has completed, re-run the release run's failed jobs once
+   (`gh run rerun <release run id> --failed --repo Judgment-Pack/judgment-pack-exchange`).
+3. If the gate refuses again, or no run can be made at the commit, stop: fix the cause on `main`
+   and release a new version from a new tag.
 
 ### The window that remains
 
@@ -153,6 +201,7 @@ What to do with a draft depends on which job failed:
 
 | The job that failed | The draft | What to do |
 | --- | --- | --- |
+| `CI evidence at the tag` | none was made | read the refusal and take [the fresh route](#the-release-evidence-gate) once |
 | Any job before `Attest and draft release` | none was made | re-run the failed jobs |
 | `Attest and draft release` | may exist, and may lack assets | read it, delete it by hand, then re-run the failed jobs. The job refuses to run while a release under the tag exists, draft or published, and refuses when it cannot find out |
 | `Publish release`, before publication | needs looking at: it may be as it was made, changed, incomplete or gone | read why the job failed, and look at the Releases page. **Keep** a draft that is as it was made, and re-run the failed jobs: that job only publishes the release id the run drafted. Do not publish a draft that was changed or is incomplete. Where the draft cannot be published, release a new version |

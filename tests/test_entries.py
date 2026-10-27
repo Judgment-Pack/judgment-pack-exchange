@@ -1156,8 +1156,8 @@ def git(repo: Path, *args: str) -> bytes | None:
 
 
 def release_being_made(environment=os.environ) -> str | None:
-    """The release a run is held for: the tag of a run at refs/tags/<tag> in the release-tag grammar (a tag
-    push, or release.yml calling ci.yml), else None, for a branch or a pull request."""
+    """The release a run is held for: the tag of a run at refs/tags/<tag> in the release-tag grammar
+    (release.yml calling ci.yml at the tag), else None, for a branch or a pull request."""
     ref = environment.get("GITHUB_REF", "")
     tag = ref[len("refs/tags/"):] if ref.startswith("refs/tags/") else None
     return tag if tag is not None and release_tag_ok(tag) else None

@@ -14,7 +14,7 @@
       "checks": ["local-paths", "agent-docs", "diff-check", "entries"]
     },
     {
-      "paths": ["scripts/sync-agent-docs.sh", "scripts/dev/handover_check.sh", "requirements-dev.txt"],
+      "paths": ["scripts/sync-agent-docs.sh", "scripts/dev/handover_check.sh", "scripts/dev/release_evidence.py", ".github/ci-evidence.json", "requirements-dev.txt"],
       "checks": ["local-paths", "agent-docs", "diff-check", "entries"]
     },
     {
