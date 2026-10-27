@@ -76,7 +76,10 @@ summary block, and anything you stopped on or chose not to do.
 - A pull request's CI runs `scripts/dev/check.sh --all --changed origin/<base>`: the checks
   `jpdev.json` maps its changed paths to, and the whole list when a path matches no rule or when
   `jpdev.json`, `dev.json`, `scripts/dev/check.sh` or `scripts/dev/changed_checks.py` changed. A
-  push, and the release workflow's call at a tag, run the whole list. `jpdev check --changed` (or
+  push runs the whole list, and a push to main records its evidence of the checks that read the
+  tree; a release takes that evidence at its exact commit or refuses (`scripts/dev/release_evidence.py`,
+  vendored from the kit, read with `.github/ci-evidence.json`), and runs only the `entries` tests,
+  which read the tags, again at the tag (`docs/releasing.md`). `jpdev check --changed` (or
   `scripts/dev/check.sh --changed`) makes the same selection locally. Every rule names all four
   checks: `local-paths` and `diff-check` read every tracked file, the `entries` tests scan every
   file for credential shapes and local paths and resolve every Markdown link, and `agent-docs` is

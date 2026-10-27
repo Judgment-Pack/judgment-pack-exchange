@@ -9,8 +9,11 @@ name: Release
 # The release's manifest.json is that commit's blob, byte for byte.
 #
 # A person decides there is a release and writes its notes
-# (docs/releases/<tag>.md). The workflow holds the tagged commit to CI,
-# writes the release's files from it, attests them, and publishes no release
+# (docs/releases/<tag>.md). The workflow holds the tagged commit to CI: to the
+# evidence main's CI recorded at that exact commit for the checks that read
+# the commit's tree, or a refusal (docs/releasing.md), then to the checks that
+# read the tags and the release history, run again at the tag. It writes the
+# release's files from the commit, attests them, and publishes no release
 # until a maintainer approves the `release` environment.
 #
 # Not secret before that approval: the files (an artifact of the run), their
@@ -114,20 +117,84 @@ jobs:
             || { echo "The release environment could not be read; create it with a required reviewer (docs/releasing.md)" >&2; exit 1; }
           [ "${reviewers}" -ge 1 ] || { echo "The release environment requires no reviewer" >&2; exit 1; }
 
-  # The tagged commit's own ci.yml, called, so release.yml carries no second
-  # copy of the `entries` checks or of the specification pin. A check main has
-  # gained since that commit is not run.
+  # The CI evidence main's CI recorded at this exact commit for the checks
+  # that read the commit's tree alone, or a refusal (.github/ci-evidence.json,
+  # docs/releasing.md). A refusal fails this job, naming its code, and with it
+  # the release: nothing runs CI again on its own, and the fresh route is the
+  # operator's choice. The tag, notes, package and publication checks of the
+  # other jobs stay fresh.
+  evidence:
+    name: CI evidence at the tag
+    needs: admit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Reading the CI runs, their jobs and their evidence artifacts.
+      actions: read
+    steps:
+      - name: Check out the commit the run was started for
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+
+      # The Python main's CI ran its checks with, as ci.yml sets it up: the
+      # evidence records it, and the gate compares it with this runner's.
+      - name: Read the toolchains from dev.json
+        id: dev
+        run: |
+          set -eu
+          python3 - >> "$GITHUB_OUTPUT" <<'PY'
+          import json
+          m = json.load(open("dev.json", encoding="utf-8"))
+          tc = m.get("toolchains", {})
+          print("python=" + tc.get("python", {}).get("version", "3.12"))
+          PY
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: ${{ steps.dev.outputs.python }}
+
+      - name: Reuse exact-commit main CI evidence, or refuse
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/dev/release_evidence.py verify --output "${{ runner.temp }}/release-evidence.json"
+
+      # The decision record, reuse or refusal, is also in the log of the step
+      # above.
+      - name: Keep the decision record
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-evidence-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/release-evidence.json
+          if-no-files-found: error
+
+  # The checks that read the tags and the release history (HISTORY_CHECKS in
+  # ci.yml, the `entries` tests), in the tag's own context: the tagged commit's
+  # ci.yml, called with `tag-context: true`, with the whole history and tags and
+  # the specification at the commit it pins, so release.yml carries no second
+  # copy of those checks or of the pin. It is the one run at the tag: ci.yml
+  # does not run on a tag push. A check main has gained since that commit is
+  # not run.
   verify:
     name: CI at the tag
-    needs: admit
+    needs:
+      - admit
+      - evidence
     permissions:
       contents: read
     uses: ./.github/workflows/ci.yml
+    with:
+      tag-context: true
 
   package:
     name: Package
     needs:
       - admit
+      - evidence
       - verify
     runs-on: ubuntu-latest
     timeout-minutes: 10
