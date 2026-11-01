@@ -1688,11 +1688,22 @@ class ExampleEntry(unittest.TestCase):
         self.assertEqual(size_problems(directory, entry), [])
         with tempfile.TemporaryDirectory() as tmp:
             base = Path(tmp)
-            (base / "entry.json").write_bytes(b"x" * (64 * 1024 + 1))
-            (base / "README.md").write_bytes(b"x" * (64 * 1024))
-            (base / "fixtures" / "valid").mkdir(parents=True)
-            (base / "fixtures" / "valid" / "big").write_bytes(b"x" * (16 * 1024 * 1024 + 1))
-            self.assertEqual(len(size_problems(base, entry)), 2)
+            for name in ("entry.json", "README.md"):
+                (base / name).write_bytes(b"x" * (64 * 1024))
+            fixture = base / "fixtures" / "valid"
+            fixture.mkdir(parents=True)
+            (fixture / "big").write_bytes(b"x" * (16 * 1024 * 1024 - 1))
+            (fixture / "small").write_bytes(b"x")
+            self.assertEqual(size_problems(base, entry), [])
+
+            for name in ("entry.json", "README.md"):
+                with self.subTest(name):
+                    (base / name).write_bytes(b"x" * (64 * 1024 + 1))
+                    self.assertEqual(size_problems(base, entry), [f"{name} is over 64 KiB"])
+                    (base / name).write_bytes(b"x" * (64 * 1024))
+
+            (fixture / "small").write_bytes(b"xx")
+            self.assertEqual(size_problems(base, entry), ["fixtures/valid is over 16 MiB"])
 
     def test_manifest_shape_and_order(self):
         row = self.tree.manifest()[0]
