@@ -1,0 +1,42 @@
+{
+  "entryVersion": 3,
+  "kind": "dialect",
+  "id": "judgmentpack.directory-identity",
+  "title": "Directory identity",
+  "description": "Prepare one directory identity's records, read in Microsoft Graph's shapes, as facts and evidence for an access review pack.",
+  "direction": "input",
+  "pack": {
+    "id": "https://example.com/judgment-packs/directory-identity",
+    "versions": "0.1.0"
+  },
+  "dialect": {
+    "path": "dialect.json",
+    "dialectVersion": 3,
+    "digest": "sha256:f239b319d589a082e68e0399e28fe6cbeb8449cb39bbb6e0f061dd2a37cdb4ea"
+  },
+  "requires": {},
+  "sourceKinds": [
+    "operation"
+  ],
+  "licence": "Apache-2.0",
+  "author": "Judgment Pack contributors",
+  "assertion": "The author asserts that these rules derive these facts and this evidence-availability from records of that shape, or these arguments from that disposition, and asserts nothing about any record's truth.",
+  "fixtures": [
+    {
+      "name": "member-every-stream-read",
+      "path": "fixtures/member-every-stream-read",
+      "preparationDigest": "sha256:2ceb009ca85006f1cdc12eae7b5486ce8290cc7782728b4843e1317869305fe5"
+    },
+    {
+      "name": "guest-risk-and-mfa-parked",
+      "path": "fixtures/guest-risk-and-mfa-parked",
+      "preparationDigest": "sha256:22b6a619eca167515016c0edb7b5df74053ebc58986e45b775e9ba10980e7578"
+    },
+    {
+      "name": "service-principal",
+      "path": "fixtures/service-principal",
+      "preparationDigest": "sha256:ea4bec2261229fc419554bd4ba3df6d5ac94ab69766fedfe9643265c4ce26cc7"
+    }
+  ],
+  "verification": []
+}

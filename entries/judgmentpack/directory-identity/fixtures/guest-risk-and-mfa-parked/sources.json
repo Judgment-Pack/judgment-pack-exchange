@@ -1,0 +1,71 @@
+{
+  "organization": {
+    "response": {
+      "result": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "bodyEncoding": "json",
+        "body": {
+          "@odata.context": "https://graph.example.com/v1.0/$metadata#organization",
+          "value": [
+            {
+              "id": "a765bee5-798b-44cf-9b8a-c18f5b4f90f6",
+              "displayName": "Example Partner Organization",
+              "verifiedDomains": [
+                {
+                  "name": "example.org",
+                  "isDefault": true,
+                  "isInitial": false,
+                  "type": "Managed"
+                }
+              ],
+              "assignedPlans": [
+                {
+                  "assignedDateTime": "2025-02-03T00:00:00Z",
+                  "capabilityStatus": "Enabled",
+                  "service": "MultiFactorService",
+                  "servicePlanId": "49222f97-2439-4430-b2c1-ca86c56c1007"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "receipt": {
+        "acquisition": {
+          "adapter": {
+            "name": "adapter-http",
+            "version": "stand-in",
+            "digest": "sha256:928e85822e9714ee550eec0123aac4041dbb3decae9ad166b20f866dc76d457b"
+          },
+          "endpoint": "https://graph.example.com/v1.0/organization",
+          "observedAt": "2026-01-15T11:20:04Z",
+          "peerIdentity": null,
+          "schema": null,
+          "shape": "http",
+          "snapshot": null,
+          "statement": null,
+          "upstreamToken": null
+        },
+        "argumentsCommitment": "sha256:a9774a7c8e1e79c084bd20cf9f6fb7b1f5de5d7d98413ed6a2849f01c33c4dd6",
+        "authority": "example",
+        "callIndex": 0,
+        "caller": null,
+        "keyId": "9d74c856ee24f4e1b3a7cb60707c46ca",
+        "kind": "acquisition",
+        "prevSignature": null,
+        "receiptVersion": "3",
+        "resultDigest": "sha256:0e1483206b5e2b529a17e773d33a395528c7b399817c3929cefaa60e264c6c29",
+        "servedAt": "2026-01-15T11:20:04Z",
+        "sessionId": "organization.session",
+        "source": "directory/organization",
+        "signature": "dcc8805b3015d567a94a90f99ff63ef4e9bead211593dbd073f8ca0b026adf050623d3dc34e379c28e98004c30320066720e5621f413c100ac6277578bd9ea01"
+      },
+      "salts": {
+        "args": "e47231b19adb422ad7d41022f734ccb767dd4c57ab35d63d3559d5fd639593a6"
+      }
+    }
+  }
+}

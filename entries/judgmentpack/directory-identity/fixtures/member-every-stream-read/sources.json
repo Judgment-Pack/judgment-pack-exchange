@@ -1,0 +1,77 @@
+{
+  "organization": {
+    "response": {
+      "result": {
+        "status": 200,
+        "headers": {
+          "content-type": "application/json"
+        },
+        "bodyEncoding": "json",
+        "body": {
+          "@odata.context": "https://graph.example.com/v1.0/$metadata#organization",
+          "value": [
+            {
+              "id": "a832c718-dac3-4b23-bbda-62873a11a226",
+              "displayName": "Example Organization",
+              "verifiedDomains": [
+                {
+                  "name": "example.com",
+                  "isDefault": true,
+                  "isInitial": false,
+                  "type": "Managed"
+                }
+              ],
+              "assignedPlans": [
+                {
+                  "assignedDateTime": "2025-01-10T00:00:00Z",
+                  "capabilityStatus": "Enabled",
+                  "service": "MultiFactorService",
+                  "servicePlanId": "a87160ef-3a27-425e-b4e0-14747a0c0bb5"
+                },
+                {
+                  "assignedDateTime": "2025-01-10T00:00:00Z",
+                  "capabilityStatus": "Enabled",
+                  "service": "DirectoryPremiumService",
+                  "servicePlanId": "b9926a80-cb14-4de8-99f2-08f7306f26ae"
+                }
+              ]
+            }
+          ]
+        }
+      },
+      "receipt": {
+        "acquisition": {
+          "adapter": {
+            "name": "adapter-http",
+            "version": "stand-in",
+            "digest": "sha256:928e85822e9714ee550eec0123aac4041dbb3decae9ad166b20f866dc76d457b"
+          },
+          "endpoint": "https://graph.example.com/v1.0/organization",
+          "observedAt": "2026-01-15T10:00:05Z",
+          "peerIdentity": null,
+          "schema": null,
+          "shape": "http",
+          "snapshot": null,
+          "statement": null,
+          "upstreamToken": null
+        },
+        "argumentsCommitment": "sha256:474a806fe9dedb03eb5939376a6c4210047264dda24f4eeeceed86b84e564c6a",
+        "authority": "example",
+        "callIndex": 0,
+        "caller": null,
+        "keyId": "9d74c856ee24f4e1b3a7cb60707c46ca",
+        "kind": "acquisition",
+        "prevSignature": null,
+        "receiptVersion": "3",
+        "resultDigest": "sha256:1a84805269aad6cf94c78ee53e346ec325016e8bfc6ae6ff12217a6375cd896f",
+        "servedAt": "2026-01-15T10:00:05Z",
+        "sessionId": "organization.session",
+        "source": "directory/organization",
+        "signature": "824688a6e722d45f9f3be78b9917c60f47b617ef65f842cbeced638846a5c0a0384f1a5d9323e7f4c86f7a5d2cf8f234e948802f6634a66c55d85484afd4ae03"
+      },
+      "salts": {
+        "args": "bbe32092f2c2ae1e0dbd7f2943ec202c0ef8614655335baafb15e00c51bca64a"
+      }
+    }
+  }
+}
