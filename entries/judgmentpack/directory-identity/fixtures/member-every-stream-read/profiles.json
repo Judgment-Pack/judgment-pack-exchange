@@ -1,0 +1,16 @@
+[
+  {
+    "id": "directory-organization",
+    "publicKey": "e2b729c1c5a1967a980026d1854835d6ab90be48701b13ef39f3f613fabcd9b5",
+    "class": "record",
+    "source": "directory/organization",
+    "authority": "example",
+    "shape": "http",
+    "adapter": {
+      "name": "adapter-http",
+      "version": "stand-in",
+      "digest": "sha256:928e85822e9714ee550eec0123aac4041dbb3decae9ad166b20f866dc76d457b"
+    },
+    "endpoint": "https://graph.example.com/v1.0/organization"
+  }
+]

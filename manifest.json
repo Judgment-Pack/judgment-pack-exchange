@@ -8,6 +8,45 @@
     "fixtures": []
   },
   {
+    "id": "judgmentpack.directory-identity",
+    "kind": "dialect",
+    "path": "entries/judgmentpack/directory-identity",
+    "entryDigest": "sha256:57c16eb927b43fb9bfb727527faff46c4b9f1f1d4b8206fb3f22cb463f66feea",
+    "dialectDigest": "sha256:8b69e4ddb9c186cd82dad3f67d0b297343a116c8ff700c8399bf104a71d2c78c",
+    "fixtures": [
+      {
+        "name": "member-every-stream-read",
+        "files": [
+          "binding.json",
+          "case.json",
+          "preparation.json",
+          "profiles.json",
+          "sources.json"
+        ]
+      },
+      {
+        "name": "guest-risk-and-mfa-parked",
+        "files": [
+          "binding.json",
+          "case.json",
+          "preparation.json",
+          "profiles.json",
+          "sources.json"
+        ]
+      },
+      {
+        "name": "service-principal",
+        "files": [
+          "binding.json",
+          "case.json",
+          "preparation.json",
+          "profiles.json",
+          "sources.json"
+        ]
+      }
+    ]
+  },
+  {
     "id": "judgmentpack.people-at-company",
     "kind": "preset",
     "path": "entries/judgmentpack/people-at-company",

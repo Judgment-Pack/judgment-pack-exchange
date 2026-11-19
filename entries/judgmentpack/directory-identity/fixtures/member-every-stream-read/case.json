@@ -1,0 +1,344 @@
+{
+  "kind": {
+    "value": "member"
+  },
+  "deleted": {
+    "value": false
+  },
+  "licenceTier": {
+    "value": "p2"
+  },
+  "user": {
+    "evidence": "present",
+    "value": {
+      "id": "1ba05308-3f01-4baf-aaf9-961579cddf6d",
+      "displayName": "Member Example",
+      "userPrincipalName": "member.example@example.com",
+      "userType": "Member",
+      "accountEnabled": true,
+      "createdDateTime": "2025-03-04T09:12:44Z",
+      "deletedDateTime": null,
+      "onPremisesSyncEnabled": true
+    }
+  },
+  "transitiveMemberOf": {
+    "evidence": "present",
+    "value": [
+      {
+        "@odata.type": "#microsoft.graph.group",
+        "id": "66a16467-dd2d-42a5-87e4-6712d2e72a9a",
+        "displayName": "Finance Readers",
+        "securityEnabled": true,
+        "mailEnabled": false,
+        "groupTypes": []
+      },
+      {
+        "@odata.type": "#microsoft.graph.group",
+        "id": "4c9532e3-1f2e-43cf-89dc-264661281e3a",
+        "displayName": "All Staff",
+        "securityEnabled": true,
+        "mailEnabled": true,
+        "groupTypes": [
+          "Unified"
+        ]
+      },
+      {
+        "@odata.type": "#microsoft.graph.group",
+        "id": "3728419b-7083-4c61-a28c-1982cbe51576",
+        "displayName": "Payment Approvers",
+        "securityEnabled": true,
+        "mailEnabled": false,
+        "groupTypes": []
+      }
+    ]
+  },
+  "roleAssignments": {
+    "evidence": "present",
+    "value": [
+      {
+        "id": "31e7b0d2-c701-4ab8-88a0-f0e650a84824",
+        "principalId": "1ba05308-3f01-4baf-aaf9-961579cddf6d",
+        "directoryScopeId": "/",
+        "roleDefinitionId": "38fc81e5-c083-4ba4-8b37-00e468c1e091",
+        "roleDefinition": {
+          "id": "38fc81e5-c083-4ba4-8b37-00e468c1e091",
+          "displayName": "User Administrator",
+          "isBuiltIn": true,
+          "isEnabled": true,
+          "isPrivileged": true,
+          "templateId": "38fc81e5-c083-4ba4-8b37-00e468c1e091"
+        }
+      }
+    ]
+  },
+  "roleEligibilitySchedules": {
+    "evidence": "present",
+    "value": [
+      {
+        "id": "d5cda9f0-c075-4729-8563-af8cbc2f0bc0",
+        "principalId": "1ba05308-3f01-4baf-aaf9-961579cddf6d",
+        "directoryScopeId": "/",
+        "roleDefinitionId": "d5d7e56b-35eb-480d-ae1d-5159c9f2d38b",
+        "memberType": "Direct",
+        "status": "Provisioned",
+        "createdDateTime": "2025-06-02T13:30:00Z",
+        "scheduleInfo": {
+          "startDateTime": "2025-06-02T13:30:00Z",
+          "expiration": {
+            "type": "afterDateTime",
+            "endDateTime": "2026-06-02T13:30:00Z"
+          }
+        },
+        "roleDefinition": {
+          "id": "d5d7e56b-35eb-480d-ae1d-5159c9f2d38b",
+          "displayName": "Groups Administrator",
+          "isBuiltIn": true,
+          "isEnabled": true,
+          "isPrivileged": true,
+          "templateId": "d5d7e56b-35eb-480d-ae1d-5159c9f2d38b"
+        }
+      }
+    ]
+  },
+  "groupEligibility": {
+    "evidence": "present",
+    "value": [
+      {
+        "id": "31672b82-d7d5-4428-b796-82f5acb6250f",
+        "groupId": "84b67e04-aa1a-4c7f-a21a-23e5fcc3dfc8",
+        "principalId": "1ba05308-3f01-4baf-aaf9-961579cddf6d",
+        "accessId": "member",
+        "memberType": "direct",
+        "status": "provisioned",
+        "createdDateTime": "2025-08-12T10:00:00Z",
+        "scheduleInfo": {
+          "startDateTime": "2025-08-12T10:00:00Z",
+          "expiration": {
+            "type": "afterDateTime",
+            "endDateTime": "2026-08-12T10:00:00Z"
+          }
+        }
+      }
+    ]
+  },
+  "oauth2PermissionGrants": {
+    "evidence": "present",
+    "value": []
+  },
+  "appRoleAssignments": {
+    "evidence": "present",
+    "value": [
+      {
+        "id": "4881872f-bfa7-4933-ac30-092aaca173c9",
+        "appRoleId": "f8f9c2f2-17d7-456a-a8b7-ce18bfa24c15",
+        "createdDateTime": "2025-03-05T10:00:00Z",
+        "principalDisplayName": "Member Example",
+        "principalId": "1ba05308-3f01-4baf-aaf9-961579cddf6d",
+        "principalType": "User",
+        "resourceDisplayName": "Expense Portal",
+        "resourceId": "1836ec26-79ed-47b9-b7a1-5b9e2c13d4f1"
+      }
+    ]
+  },
+  "servicePrincipal": {
+    "evidence": "absent"
+  },
+  "signInActivity": {
+    "evidence": "present",
+    "value": {
+      "lastSignInDateTime": "2026-01-14T16:05:12Z",
+      "lastSignInRequestId": "21e5a026-1f7b-4158-83e4-f964cfe2ced4",
+      "lastNonInteractiveSignInDateTime": "2026-01-15T08:41:03Z",
+      "lastNonInteractiveSignInRequestId": "3147181a-879e-4033-a83c-0ce670af0da1",
+      "lastSuccessfulSignInDateTime": "2026-01-15T08:41:03Z",
+      "lastSuccessfulSignInRequestId": "3147181a-879e-4033-a83c-0ce670af0da1"
+    }
+  },
+  "signIns": {
+    "evidence": "present",
+    "value": [
+      {
+        "id": "e7c6f6bc-ec57-4de9-8b77-c7f45428bffe",
+        "createdDateTime": "2026-01-14T16:05:12Z",
+        "userId": "1ba05308-3f01-4baf-aaf9-961579cddf6d",
+        "userPrincipalName": "member.example@example.com",
+        "appId": "c9215b66-3563-418b-8c95-386a10583b4d",
+        "appDisplayName": "Expense Portal",
+        "ipAddress": "192.0.2.15",
+        "clientAppUsed": "Browser",
+        "isInteractive": true,
+        "conditionalAccessStatus": "success",
+        "riskLevelDuringSignIn": "none",
+        "riskState": "none",
+        "status": {
+          "errorCode": 0,
+          "failureReason": null,
+          "additionalDetails": null
+        }
+      },
+      {
+        "id": "f1c7c530-667e-4608-bb9e-5e0fa74a235e",
+        "createdDateTime": "2026-01-15T08:41:03Z",
+        "userId": "1ba05308-3f01-4baf-aaf9-961579cddf6d",
+        "userPrincipalName": "member.example@example.com",
+        "appId": "c9215b66-3563-418b-8c95-386a10583b4d",
+        "appDisplayName": "Expense Portal",
+        "ipAddress": "192.0.2.15",
+        "clientAppUsed": "Mobile Apps and Desktop clients",
+        "isInteractive": false,
+        "conditionalAccessStatus": "success",
+        "riskLevelDuringSignIn": "none",
+        "riskState": "none",
+        "status": {
+          "errorCode": 0,
+          "failureReason": null,
+          "additionalDetails": null
+        }
+      }
+    ]
+  },
+  "directoryAudits": {
+    "evidence": "present",
+    "value": [
+      {
+        "id": "ba069e93-b144-4081-b84f-e4a9b85da784",
+        "activityDateTime": "2025-11-20T14:02:51Z",
+        "activityDisplayName": "Add member to role",
+        "category": "RoleManagement",
+        "loggedByService": "Core Directory",
+        "operationType": "Assign",
+        "result": "success",
+        "initiatedBy": {
+          "user": {
+            "id": "913f7b19-f53f-447a-8fc3-7e3c54ea7f7f",
+            "userPrincipalName": "directory.admin@example.com"
+          },
+          "app": null
+        },
+        "targetResources": [
+          {
+            "id": "1ba05308-3f01-4baf-aaf9-961579cddf6d",
+            "type": "User",
+            "userPrincipalName": "member.example@example.com"
+          }
+        ]
+      }
+    ]
+  },
+  "riskDetections": {
+    "evidence": "present",
+    "value": [
+      {
+        "id": "6b3d8f63-25e7-48df-b03f-ad0c6309d848",
+        "userId": "1ba05308-3f01-4baf-aaf9-961579cddf6d",
+        "userPrincipalName": "member.example@example.com",
+        "riskEventType": "unfamiliarFeatures",
+        "riskLevel": "low",
+        "riskState": "remediated",
+        "riskDetail": "userPerformedSecuredPasswordChange",
+        "detectionTimingType": "realtime",
+        "activity": "signin",
+        "source": "IdentityProtection",
+        "ipAddress": "198.51.100.44",
+        "activityDateTime": "2025-12-01T07:15:40Z",
+        "detectedDateTime": "2025-12-01T07:15:41Z"
+      }
+    ]
+  },
+  "riskyUser": {
+    "evidence": "present",
+    "value": {
+      "id": "1ba05308-3f01-4baf-aaf9-961579cddf6d",
+      "userPrincipalName": "member.example@example.com",
+      "riskLevel": "none",
+      "riskState": "remediated",
+      "riskDetail": "userPerformedSecuredPasswordChange",
+      "riskLastUpdatedDateTime": "2025-12-01T09:00:00Z",
+      "isDeleted": false,
+      "isProcessing": false
+    }
+  },
+  "registrationDetails": {
+    "evidence": "present",
+    "value": {
+      "id": "1ba05308-3f01-4baf-aaf9-961579cddf6d",
+      "userPrincipalName": "member.example@example.com",
+      "userDisplayName": "Member Example",
+      "userType": "member",
+      "isAdmin": true,
+      "isMfaCapable": true,
+      "isMfaRegistered": true,
+      "isPasswordlessCapable": false,
+      "isSsprCapable": true,
+      "isSsprEnabled": true,
+      "isSsprRegistered": true,
+      "methodsRegistered": [
+        "fido2",
+        "softwareOneTimePasscode"
+      ],
+      "defaultMfaMethod": "softwareOneTimePasscode",
+      "lastUpdatedDateTime": "2026-01-10T06:00:00Z"
+    }
+  },
+  "registeredDevices": {
+    "evidence": "present",
+    "value": [
+      {
+        "@odata.type": "#microsoft.graph.device",
+        "id": "48cb3842-5468-42cc-b621-6c7d4dfa0c99",
+        "deviceId": "fcf7e631-61cd-4bb9-b539-e687ba9ce288",
+        "displayName": "laptop-0042",
+        "accountEnabled": true,
+        "approximateLastSignInDateTime": "2026-01-15T08:40:00Z"
+      }
+    ]
+  },
+  "streams": {
+    "user": {
+      "state": "read"
+    },
+    "transitiveMemberOf": {
+      "state": "read"
+    },
+    "roleAssignments": {
+      "state": "read"
+    },
+    "roleEligibilitySchedules": {
+      "state": "read"
+    },
+    "groupEligibility": {
+      "state": "read"
+    },
+    "oauth2PermissionGrants": {
+      "state": "read"
+    },
+    "appRoleAssignments": {
+      "state": "read"
+    },
+    "servicePrincipal": {
+      "state": "absent",
+      "reason": "not-applicable"
+    },
+    "signInActivity": {
+      "state": "read"
+    },
+    "signIns": {
+      "state": "read"
+    },
+    "directoryAudits": {
+      "state": "read"
+    },
+    "riskDetections": {
+      "state": "read"
+    },
+    "riskyUser": {
+      "state": "read"
+    },
+    "registrationDetails": {
+      "state": "read"
+    },
+    "registeredDevices": {
+      "state": "read"
+    }
+  }
+}

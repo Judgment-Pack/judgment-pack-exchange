@@ -1,0 +1,9 @@
+{
+  "dialect": "sha256:b1524fc65a5b797e040548c2b4edaf3064565e2d0a3721abc750d261e25965db",
+  "sources": {
+    "organization": {
+      "profile": "directory-organization",
+      "profileDigest": "sha256:ecd278e7739a89bfd79f51127c5a498d6cbb1577a5c9b6b0c8c74466ab97fd6c"
+    }
+  }
+}

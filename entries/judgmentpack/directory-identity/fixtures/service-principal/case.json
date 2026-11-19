@@ -1,0 +1,230 @@
+{
+  "kind": {
+    "value": "service_principal"
+  },
+  "deleted": {
+    "value": false
+  },
+  "licenceTier": {
+    "value": "p2"
+  },
+  "user": {
+    "evidence": "absent"
+  },
+  "transitiveMemberOf": {
+    "evidence": "present",
+    "value": [
+      {
+        "@odata.type": "#microsoft.graph.group",
+        "id": "ab071c67-c2e4-4246-a27a-509149b62f78",
+        "displayName": "Automation Accounts",
+        "securityEnabled": true,
+        "mailEnabled": false,
+        "groupTypes": []
+      }
+    ]
+  },
+  "roleAssignments": {
+    "evidence": "present",
+    "value": [
+      {
+        "id": "5b6ae86f-9b05-4485-b928-a67f01858633",
+        "principalId": "c52ec41c-3457-438e-af95-05c1f6b301d0",
+        "directoryScopeId": "/",
+        "roleDefinitionId": "cf8610c5-48d7-4d7f-9c7b-a45b14214f53",
+        "roleDefinition": {
+          "id": "cf8610c5-48d7-4d7f-9c7b-a45b14214f53",
+          "displayName": "Application Administrator",
+          "isBuiltIn": true,
+          "isEnabled": true,
+          "isPrivileged": true,
+          "templateId": "cf8610c5-48d7-4d7f-9c7b-a45b14214f53"
+        }
+      }
+    ]
+  },
+  "roleEligibilitySchedules": {
+    "evidence": "present",
+    "value": []
+  },
+  "groupEligibility": {
+    "evidence": "absent"
+  },
+  "oauth2PermissionGrants": {
+    "evidence": "present",
+    "value": [
+      {
+        "id": "2d7ac283-5342-427e-b6b6-2a666e73f849",
+        "clientId": "c52ec41c-3457-438e-af95-05c1f6b301d0",
+        "consentType": "AllPrincipals",
+        "principalId": null,
+        "resourceId": "6043f4ae-1f39-4e4e-aeb3-cc7f563deb94",
+        "scope": "User.Read"
+      }
+    ]
+  },
+  "appRoleAssignments": {
+    "evidence": "present",
+    "value": [
+      {
+        "id": "05318dd2-e28a-4a37-87e6-211daa125de3",
+        "appRoleId": "0a9836d9-e979-47f7-a708-8e983b7d9a6e",
+        "createdDateTime": "2025-04-22T12:00:00Z",
+        "principalDisplayName": "Inventory Sync",
+        "principalId": "c52ec41c-3457-438e-af95-05c1f6b301d0",
+        "principalType": "ServicePrincipal",
+        "resourceDisplayName": "Directory API",
+        "resourceId": "6043f4ae-1f39-4e4e-aeb3-cc7f563deb94"
+      }
+    ]
+  },
+  "servicePrincipal": {
+    "evidence": "present",
+    "value": {
+      "id": "c52ec41c-3457-438e-af95-05c1f6b301d0",
+      "appId": "340973b8-87bc-447c-9b59-f1138d38c78d",
+      "displayName": "Inventory Sync",
+      "servicePrincipalType": "Application",
+      "accountEnabled": true,
+      "appOwnerOrganizationId": "a832c718-dac3-4b23-bbda-62873a11a226",
+      "passwordCredentials": [
+        {
+          "keyId": "083e9f1d-2b88-4309-bc50-6703a36e1511",
+          "displayName": "sync job",
+          "startDateTime": "2025-04-22T12:00:00Z",
+          "endDateTime": "2027-04-22T12:00:00Z"
+        }
+      ],
+      "keyCredentials": [
+        {
+          "keyId": "9fb6de03-e48e-4df3-baf4-f39ab8bd8a72",
+          "displayName": "CN=inventory-sync.example.com",
+          "type": "AsymmetricX509Cert",
+          "usage": "Verify",
+          "startDateTime": "2025-04-22T12:00:00Z",
+          "endDateTime": "2026-04-22T12:00:00Z"
+        }
+      ],
+      "owners": []
+    }
+  },
+  "signInActivity": {
+    "evidence": "absent"
+  },
+  "signIns": {
+    "evidence": "present",
+    "value": [
+      {
+        "id": "320c8b46-5fac-4a8c-9ff9-6a23f5310f2b",
+        "createdDateTime": "2026-01-15T12:30:00Z",
+        "appId": "340973b8-87bc-447c-9b59-f1138d38c78d",
+        "appDisplayName": "Inventory Sync",
+        "servicePrincipalId": "c52ec41c-3457-438e-af95-05c1f6b301d0",
+        "servicePrincipalName": "Inventory Sync",
+        "resourceDisplayName": "Directory API",
+        "resourceId": "6043f4ae-1f39-4e4e-aeb3-cc7f563deb94",
+        "ipAddress": "203.0.113.7",
+        "conditionalAccessStatus": "notApplied",
+        "status": {
+          "errorCode": 0,
+          "failureReason": null,
+          "additionalDetails": null
+        }
+      }
+    ]
+  },
+  "directoryAudits": {
+    "evidence": "present",
+    "value": [
+      {
+        "id": "280d1362-3c11-467f-b779-018c0f89b169",
+        "activityDateTime": "2025-04-22T12:00:00Z",
+        "activityDisplayName": "Update application - Certificates and secrets management",
+        "category": "ApplicationManagement",
+        "loggedByService": "Core Directory",
+        "operationType": "Update",
+        "result": "success",
+        "initiatedBy": {
+          "user": {
+            "id": "913f7b19-f53f-447a-8fc3-7e3c54ea7f7f",
+            "userPrincipalName": "directory.admin@example.com"
+          },
+          "app": null
+        },
+        "targetResources": [
+          {
+            "id": "c52ec41c-3457-438e-af95-05c1f6b301d0",
+            "type": "ServicePrincipal",
+            "displayName": "Inventory Sync"
+          }
+        ]
+      }
+    ]
+  },
+  "riskDetections": {
+    "evidence": "absent"
+  },
+  "riskyUser": {
+    "evidence": "absent"
+  },
+  "registrationDetails": {
+    "evidence": "absent"
+  },
+  "registeredDevices": {
+    "evidence": "absent"
+  },
+  "streams": {
+    "user": {
+      "state": "absent",
+      "reason": "not-applicable"
+    },
+    "transitiveMemberOf": {
+      "state": "read"
+    },
+    "roleAssignments": {
+      "state": "read"
+    },
+    "roleEligibilitySchedules": {
+      "state": "read"
+    },
+    "groupEligibility": {
+      "state": "absent",
+      "reason": "not-applicable"
+    },
+    "oauth2PermissionGrants": {
+      "state": "read"
+    },
+    "appRoleAssignments": {
+      "state": "read"
+    },
+    "servicePrincipal": {
+      "state": "read"
+    },
+    "signInActivity": {
+      "state": "absent",
+      "reason": "not-applicable"
+    },
+    "signIns": {
+      "state": "read"
+    },
+    "directoryAudits": {
+      "state": "read"
+    },
+    "riskDetections": {
+      "state": "absent",
+      "reason": "permission"
+    },
+    "riskyUser": {
+      "state": "absent",
+      "reason": "not-applicable"
+    },
+    "registrationDetails": {
+      "state": "absent",
+      "reason": "not-applicable"
+    },
+    "registeredDevices": {
+      "state": "absent",
+      "reason": "not-applicable"
+    }
+  }
+}

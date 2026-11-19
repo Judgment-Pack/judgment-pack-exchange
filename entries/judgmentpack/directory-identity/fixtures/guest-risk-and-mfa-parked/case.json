@@ -1,0 +1,214 @@
+{
+  "kind": {
+    "value": "guest"
+  },
+  "deleted": {
+    "value": false
+  },
+  "licenceTier": {
+    "value": "free"
+  },
+  "user": {
+    "evidence": "present",
+    "value": {
+      "id": "6793616e-5340-4fcc-b29d-4125876844a5",
+      "displayName": "Guest Example",
+      "userPrincipalName": "guest.example_example.com#EXT#@example.org",
+      "userType": "Guest",
+      "accountEnabled": true,
+      "createdDateTime": "2025-09-18T15:47:09Z",
+      "deletedDateTime": null,
+      "onPremisesSyncEnabled": null
+    }
+  },
+  "transitiveMemberOf": {
+    "evidence": "present",
+    "value": [
+      {
+        "@odata.type": "#microsoft.graph.group",
+        "id": "e8e98b31-d3ff-4ac8-be39-5e4aed006017",
+        "displayName": "Partner Collaborators",
+        "securityEnabled": true,
+        "mailEnabled": false,
+        "groupTypes": []
+      }
+    ]
+  },
+  "roleAssignments": {
+    "evidence": "present",
+    "value": []
+  },
+  "roleEligibilitySchedules": {
+    "evidence": "present",
+    "value": [
+      {
+        "id": "93e887fe-4672-4784-83ea-5f2a0f28e97a",
+        "principalId": "6793616e-5340-4fcc-b29d-4125876844a5",
+        "directoryScopeId": "/",
+        "roleDefinitionId": "cf8610c5-48d7-4d7f-9c7b-a45b14214f53",
+        "memberType": "Direct",
+        "status": "Provisioned",
+        "createdDateTime": "2025-10-01T09:00:00Z",
+        "scheduleInfo": {
+          "startDateTime": "2025-10-01T09:00:00Z",
+          "expiration": {
+            "type": "noExpiration",
+            "endDateTime": null
+          }
+        },
+        "roleDefinition": {
+          "id": "cf8610c5-48d7-4d7f-9c7b-a45b14214f53",
+          "displayName": "Application Administrator",
+          "isBuiltIn": true,
+          "isEnabled": true,
+          "isPrivileged": true,
+          "templateId": "cf8610c5-48d7-4d7f-9c7b-a45b14214f53"
+        }
+      }
+    ]
+  },
+  "groupEligibility": {
+    "evidence": "present",
+    "value": []
+  },
+  "oauth2PermissionGrants": {
+    "evidence": "present",
+    "value": [
+      {
+        "id": "ee52c399-6917-4e16-8adb-2db35fa5e03d",
+        "clientId": "6340b79a-48ad-4850-a8ea-2884a7657173",
+        "consentType": "Principal",
+        "principalId": "6793616e-5340-4fcc-b29d-4125876844a5",
+        "resourceId": "b6e39425-1f61-43cf-83e9-9a74586ef964",
+        "scope": "User.Read Files.Read"
+      }
+    ]
+  },
+  "appRoleAssignments": {
+    "evidence": "present",
+    "value": []
+  },
+  "servicePrincipal": {
+    "evidence": "absent"
+  },
+  "signInActivity": {
+    "evidence": "absent"
+  },
+  "signIns": {
+    "evidence": "present",
+    "value": [
+      {
+        "id": "d9a047f1-1868-46c9-8a4f-bc741643053c",
+        "createdDateTime": "2026-01-12T11:02:37Z",
+        "userId": "6793616e-5340-4fcc-b29d-4125876844a5",
+        "userPrincipalName": "guest.example_example.com#EXT#@example.org",
+        "appId": "5227e3fd-463d-431c-8ae6-4603d424c645",
+        "appDisplayName": "Partner Portal",
+        "ipAddress": "198.51.100.23",
+        "clientAppUsed": "Browser",
+        "isInteractive": true,
+        "conditionalAccessStatus": "notApplied",
+        "riskLevelDuringSignIn": "hidden",
+        "riskState": "none",
+        "status": {
+          "errorCode": 0,
+          "failureReason": null,
+          "additionalDetails": null
+        }
+      }
+    ]
+  },
+  "directoryAudits": {
+    "evidence": "present",
+    "value": [
+      {
+        "id": "403850f9-88e0-4d0e-95b5-e8bb61be6066",
+        "activityDateTime": "2025-09-18T15:47:09Z",
+        "activityDisplayName": "Invite external user",
+        "category": "UserManagement",
+        "loggedByService": "Invited Users",
+        "operationType": "Add",
+        "result": "success",
+        "initiatedBy": {
+          "user": {
+            "id": "f425cb36-1622-449d-8ab9-eaab45103c20",
+            "userPrincipalName": "partner.manager@example.org"
+          },
+          "app": null
+        },
+        "targetResources": [
+          {
+            "id": "6793616e-5340-4fcc-b29d-4125876844a5",
+            "type": "User",
+            "userPrincipalName": "guest.example_example.com#EXT#@example.org"
+          }
+        ]
+      }
+    ]
+  },
+  "riskDetections": {
+    "evidence": "absent"
+  },
+  "riskyUser": {
+    "evidence": "absent"
+  },
+  "registrationDetails": {
+    "evidence": "absent"
+  },
+  "registeredDevices": {
+    "evidence": "present",
+    "value": []
+  },
+  "streams": {
+    "user": {
+      "state": "read"
+    },
+    "transitiveMemberOf": {
+      "state": "read"
+    },
+    "roleAssignments": {
+      "state": "read"
+    },
+    "roleEligibilitySchedules": {
+      "state": "read"
+    },
+    "groupEligibility": {
+      "state": "read"
+    },
+    "oauth2PermissionGrants": {
+      "state": "read"
+    },
+    "appRoleAssignments": {
+      "state": "read"
+    },
+    "servicePrincipal": {
+      "state": "absent",
+      "reason": "not-applicable"
+    },
+    "signInActivity": {
+      "state": "absent",
+      "reason": "licence"
+    },
+    "signIns": {
+      "state": "read"
+    },
+    "directoryAudits": {
+      "state": "read"
+    },
+    "riskDetections": {
+      "state": "absent",
+      "reason": "licence"
+    },
+    "riskyUser": {
+      "state": "absent",
+      "reason": "home-directory"
+    },
+    "registrationDetails": {
+      "state": "absent",
+      "reason": "licence"
+    },
+    "registeredDevices": {
+      "state": "read"
+    }
+  }
+}
