@@ -130,13 +130,16 @@ case is written, and each fact below is only as narrow as that preparation:
   from the receipted read; which plan covers which stream is the reader's categorisation, not the
   dialect's. `streams` is the caller's map of each stream's state and, when absent, its reason.
 - **The evidence member.** The caller sets each stream's `evidence`, and its `streams` entry, from
-  what the read did. Nothing in the dialect checks that the two agree.
+  what the read did, and keeps the two consistent: a stream whose `streams[X].state` is `read`
+  carries `X.evidence` `present`, and any other state carries `absent`. Nothing in the dialect
+  checks that the two agree, so a reader relies on the caller for it.
 
 ## Fixtures
 
 The fixtures are synthetic and written by hand, never recorded from a run. Every identifier is a
-random GUID, every name is invented, every domain is `example.com` or `example.org`, and every
-address is from a documentation range.
+random GUID invented for the fixture, including the ids that stand for built-in role templates
+and service plans, so none of them is a real directory's value. Every name is invented, every
+domain is `example.com` or `example.org`, and every address is from a documentation range.
 
 - `member-every-stream-read`: a member user with every stream that applies read; its OAuth grants
   stream is present and empty, so `identity.oauth_grants` is `[]` with evidence present.
