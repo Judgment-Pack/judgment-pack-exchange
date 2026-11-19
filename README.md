@@ -8,9 +8,11 @@ holds bindings: each one as a pinned entry, with its licence and its author. An 
 kind `preset` is an input recipe without a pack or fixtures, which a desk pairs with a pack locally
 before any run.
 
-The catalog contains three unexecuted research presets: company research, people at a selected
-company, and public procurement opportunities. Each needs a local pack, compatible connection
-bindings and review before use. Import a released tag; the current branch is not a release.
+The catalog contains one dialect, directory identity, written against the pack its README holds and
+carrying synthetic fixtures, and three unexecuted research presets: company research, people at a
+selected company, and public procurement opportunities. Each needs compatible connection bindings
+and review before use, and each preset a local pack. Import a released tag; the current branch is
+not a release.
 
 ## What an entry establishes, and what it does not
 
