@@ -1,8 +1,9 @@
 # Entries
 
 This directory holds the Exchange's entries, one directory each: `entries/<publisher>/<name>/`. It
-holds three research presets, `judgmentpack.company-research`,
-`judgmentpack.people-at-company` and `judgmentpack.procurement-opportunity`.
+holds one dialect, `judgmentpack.directory-identity`, and three research presets,
+`judgmentpack.company-research`, `judgmentpack.people-at-company` and
+`judgmentpack.procurement-opportunity`.
 
 An entry is a dialect, the reusable translation between a system and a pack, with what a reader
 needs to check it: of kind `dialect`, written against a pack, with fixtures; or of kind `preset`, an
