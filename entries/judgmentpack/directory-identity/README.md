@@ -117,7 +117,7 @@ case is written, and each fact below is only as narrow as that preparation:
 - `identity.oauth_grants` and `identity.app_role_assignments`: the grants and assignments the
   identity holds, as Graph lists them for that principal.
 - `sp.credentials`: an object of two arrays, the service principal's `passwordCredentials` and
-  `keyCredentials`; Graph returns their metadata, not the secrets.
+  `keyCredentials`, as metadata only (type, identifier and expiry); the fixtures carry no secret.
 - `sp.owners`: the owners, expanded onto the service principal record (`$expand=owners`).
 - `signin.event`, `audit.event` and `risk.detection`: the events for this identity over the window
   the caller chose, as Graph's sign-in, directory audit and risk detection lists return them.
@@ -144,7 +144,8 @@ address is from a documentation range.
   registration were parked for licence; those facts are not written and that evidence reads absent,
   while its empty role assignments and devices are present as `[]`.
 - `service-principal`: a service principal with a secret and a certificate and no owner, whose risk
-  detections were not readable for permission and whose user-only streams are not applicable.
+  detections were not readable for permission and whose user-only streams (user, risky user,
+  authentication-methods registration and registered devices) are not applicable.
 
 Each fixture's `binding.json` binds the organization source to a stand-in input profile in its
 `profiles.json`, whose public key belongs to a throwaway key pair made for these fixtures; its
