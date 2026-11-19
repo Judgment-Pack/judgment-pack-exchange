@@ -11,8 +11,8 @@
     "id": "judgmentpack.directory-identity",
     "kind": "dialect",
     "path": "entries/judgmentpack/directory-identity",
-    "entryDigest": "sha256:e9637655e44d1d9b7ef934ed1838cb9fb74587565c0b9f9f1cced9df5c25f4e6",
-    "dialectDigest": "sha256:f9ee3bf26e3af46ca6aec78b0ad660b9751531d851ac7174fd4d5b5f147576f9",
+    "entryDigest": "sha256:57c16eb927b43fb9bfb727527faff46c4b9f1f1d4b8206fb3f22cb463f66feea",
+    "dialectDigest": "sha256:8b69e4ddb9c186cd82dad3f67d0b297343a116c8ff700c8399bf104a71d2c78c",
     "fixtures": [
       {
         "name": "member-every-stream-read",

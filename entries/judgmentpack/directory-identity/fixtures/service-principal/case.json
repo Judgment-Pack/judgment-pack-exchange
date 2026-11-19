@@ -1,4 +1,13 @@
 {
+  "kind": {
+    "value": "service_principal"
+  },
+  "deleted": {
+    "value": false
+  },
+  "licenceTier": {
+    "value": "p2"
+  },
   "user": {
     "evidence": "absent"
   },
@@ -37,6 +46,9 @@
   "roleEligibilitySchedules": {
     "evidence": "present",
     "value": []
+  },
+  "groupEligibility": {
+    "evidence": "absent"
   },
   "oauth2PermissionGrants": {
     "evidence": "present",
@@ -95,6 +107,9 @@
       ],
       "owners": []
     }
+  },
+  "signInActivity": {
+    "evidence": "absent"
   },
   "signIns": {
     "evidence": "present",
@@ -159,18 +174,57 @@
     "evidence": "absent"
   },
   "streams": {
-    "user": {"state": "absent", "reason": "not-applicable"},
-    "transitiveMemberOf": {"state": "read"},
-    "roleAssignments": {"state": "read"},
-    "roleEligibilitySchedules": {"state": "read"},
-    "oauth2PermissionGrants": {"state": "read"},
-    "appRoleAssignments": {"state": "read"},
-    "servicePrincipal": {"state": "read"},
-    "signIns": {"state": "read"},
-    "directoryAudits": {"state": "read"},
-    "riskDetections": {"state": "absent", "reason": "permission"},
-    "riskyUser": {"state": "absent", "reason": "not-applicable"},
-    "registrationDetails": {"state": "absent", "reason": "not-applicable"},
-    "registeredDevices": {"state": "absent", "reason": "not-applicable"}
+    "user": {
+      "state": "absent",
+      "reason": "not-applicable"
+    },
+    "transitiveMemberOf": {
+      "state": "read"
+    },
+    "roleAssignments": {
+      "state": "read"
+    },
+    "roleEligibilitySchedules": {
+      "state": "read"
+    },
+    "groupEligibility": {
+      "state": "absent",
+      "reason": "not-applicable"
+    },
+    "oauth2PermissionGrants": {
+      "state": "read"
+    },
+    "appRoleAssignments": {
+      "state": "read"
+    },
+    "servicePrincipal": {
+      "state": "read"
+    },
+    "signInActivity": {
+      "state": "absent",
+      "reason": "not-applicable"
+    },
+    "signIns": {
+      "state": "read"
+    },
+    "directoryAudits": {
+      "state": "read"
+    },
+    "riskDetections": {
+      "state": "absent",
+      "reason": "permission"
+    },
+    "riskyUser": {
+      "state": "absent",
+      "reason": "not-applicable"
+    },
+    "registrationDetails": {
+      "state": "absent",
+      "reason": "not-applicable"
+    },
+    "registeredDevices": {
+      "state": "absent",
+      "reason": "not-applicable"
+    }
   }
 }

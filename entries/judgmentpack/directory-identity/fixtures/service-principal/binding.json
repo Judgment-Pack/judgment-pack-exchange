@@ -1,9 +1,9 @@
 {
-  "dialect": "sha256:74769c5d0007f4797f436ba3f3eed99aff55500730fdd426a3504934d1e982f6",
+  "dialect": "sha256:b1524fc65a5b797e040548c2b4edaf3064565e2d0a3721abc750d261e25965db",
   "sources": {
     "organization": {
       "profile": "directory-organization",
-      "profileDigest": "sha256:a7812a12a644bbce5e6f0403ad074230b749542a251edb80ba5297156a7985a1"
+      "profileDigest": "sha256:ecd278e7739a89bfd79f51127c5a498d6cbb1577a5c9b6b0c8c74466ab97fd6c"
     }
   }
 }

@@ -1,4 +1,13 @@
 {
+  "kind": {
+    "value": "member"
+  },
+  "deleted": {
+    "value": false
+  },
+  "licenceTier": {
+    "value": "p2"
+  },
   "user": {
     "evidence": "present",
     "value": {
@@ -9,15 +18,7 @@
       "accountEnabled": true,
       "createdDateTime": "2025-03-04T09:12:44Z",
       "deletedDateTime": null,
-      "onPremisesSyncEnabled": true,
-      "signInActivity": {
-        "lastSignInDateTime": "2026-01-14T16:05:12Z",
-        "lastSignInRequestId": "21e5a026-1f7b-4158-83e4-f964cfe2ced4",
-        "lastNonInteractiveSignInDateTime": "2026-01-15T08:41:03Z",
-        "lastNonInteractiveSignInRequestId": "3147181a-879e-4033-a83c-0ce670af0da1",
-        "lastSuccessfulSignInDateTime": "2026-01-15T08:41:03Z",
-        "lastSuccessfulSignInRequestId": "3147181a-879e-4033-a83c-0ce670af0da1"
-      }
+      "onPremisesSyncEnabled": true
     }
   },
   "transitiveMemberOf": {
@@ -37,7 +38,9 @@
         "displayName": "All Staff",
         "securityEnabled": true,
         "mailEnabled": true,
-        "groupTypes": ["Unified"]
+        "groupTypes": [
+          "Unified"
+        ]
       },
       {
         "@odata.type": "#microsoft.graph.group",
@@ -97,6 +100,27 @@
       }
     ]
   },
+  "groupEligibility": {
+    "evidence": "present",
+    "value": [
+      {
+        "id": "31672b82-d7d5-4428-b796-82f5acb6250f",
+        "groupId": "84b67e04-aa1a-4c7f-a21a-23e5fcc3dfc8",
+        "principalId": "1ba05308-3f01-4baf-aaf9-961579cddf6d",
+        "accessId": "member",
+        "memberType": "direct",
+        "status": "provisioned",
+        "createdDateTime": "2025-08-12T10:00:00Z",
+        "scheduleInfo": {
+          "startDateTime": "2025-08-12T10:00:00Z",
+          "expiration": {
+            "type": "afterDateTime",
+            "endDateTime": "2026-08-12T10:00:00Z"
+          }
+        }
+      }
+    ]
+  },
   "oauth2PermissionGrants": {
     "evidence": "present",
     "value": []
@@ -118,6 +142,17 @@
   },
   "servicePrincipal": {
     "evidence": "absent"
+  },
+  "signInActivity": {
+    "evidence": "present",
+    "value": {
+      "lastSignInDateTime": "2026-01-14T16:05:12Z",
+      "lastSignInRequestId": "21e5a026-1f7b-4158-83e4-f964cfe2ced4",
+      "lastNonInteractiveSignInDateTime": "2026-01-15T08:41:03Z",
+      "lastNonInteractiveSignInRequestId": "3147181a-879e-4033-a83c-0ce670af0da1",
+      "lastSuccessfulSignInDateTime": "2026-01-15T08:41:03Z",
+      "lastSuccessfulSignInRequestId": "3147181a-879e-4033-a83c-0ce670af0da1"
+    }
   },
   "signIns": {
     "evidence": "present",
@@ -237,7 +272,10 @@
       "isSsprCapable": true,
       "isSsprEnabled": true,
       "isSsprRegistered": true,
-      "methodsRegistered": ["fido2", "softwareOneTimePasscode"],
+      "methodsRegistered": [
+        "fido2",
+        "softwareOneTimePasscode"
+      ],
       "defaultMfaMethod": "softwareOneTimePasscode",
       "lastUpdatedDateTime": "2026-01-10T06:00:00Z"
     }
@@ -256,18 +294,51 @@
     ]
   },
   "streams": {
-    "user": {"state": "read"},
-    "transitiveMemberOf": {"state": "read"},
-    "roleAssignments": {"state": "read"},
-    "roleEligibilitySchedules": {"state": "read"},
-    "oauth2PermissionGrants": {"state": "read"},
-    "appRoleAssignments": {"state": "read"},
-    "servicePrincipal": {"state": "absent", "reason": "not-applicable"},
-    "signIns": {"state": "read"},
-    "directoryAudits": {"state": "read"},
-    "riskDetections": {"state": "read"},
-    "riskyUser": {"state": "read"},
-    "registrationDetails": {"state": "read"},
-    "registeredDevices": {"state": "read"}
+    "user": {
+      "state": "read"
+    },
+    "transitiveMemberOf": {
+      "state": "read"
+    },
+    "roleAssignments": {
+      "state": "read"
+    },
+    "roleEligibilitySchedules": {
+      "state": "read"
+    },
+    "groupEligibility": {
+      "state": "read"
+    },
+    "oauth2PermissionGrants": {
+      "state": "read"
+    },
+    "appRoleAssignments": {
+      "state": "read"
+    },
+    "servicePrincipal": {
+      "state": "absent",
+      "reason": "not-applicable"
+    },
+    "signInActivity": {
+      "state": "read"
+    },
+    "signIns": {
+      "state": "read"
+    },
+    "directoryAudits": {
+      "state": "read"
+    },
+    "riskDetections": {
+      "state": "read"
+    },
+    "riskyUser": {
+      "state": "read"
+    },
+    "registrationDetails": {
+      "state": "read"
+    },
+    "registeredDevices": {
+      "state": "read"
+    }
   }
 }

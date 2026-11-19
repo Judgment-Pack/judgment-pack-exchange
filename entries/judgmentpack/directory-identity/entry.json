@@ -12,7 +12,7 @@
   "dialect": {
     "path": "dialect.json",
     "dialectVersion": 3,
-    "digest": "sha256:74769c5d0007f4797f436ba3f3eed99aff55500730fdd426a3504934d1e982f6"
+    "digest": "sha256:b1524fc65a5b797e040548c2b4edaf3064565e2d0a3721abc750d261e25965db"
   },
   "requires": {},
   "sourceKinds": [
@@ -25,17 +25,17 @@
     {
       "name": "member-every-stream-read",
       "path": "fixtures/member-every-stream-read",
-      "preparationDigest": "sha256:461b56a8838d595d5338773fa88662bebaf2e2105af564553e07bfdad1d1362a"
+      "preparationDigest": "sha256:84dd599f98232df4f417addab30a3acf078f1dc61ffa719db7849f80aa6361c1"
     },
     {
       "name": "guest-risk-and-mfa-parked",
       "path": "fixtures/guest-risk-and-mfa-parked",
-      "preparationDigest": "sha256:df00ad3f1b1166dfcc8ae16616ae27289e40b8c1ed211c0d997ccbf3e394e53e"
+      "preparationDigest": "sha256:f703176de2142023e69ee3b5bcbd1333de23a5588482f88154ca59ea2be03f29"
     },
     {
       "name": "service-principal",
       "path": "fixtures/service-principal",
-      "preparationDigest": "sha256:4da979e1dd24a29211f9407b58f49fe58aaffde25f24d7eb49572d7d58a9ace8"
+      "preparationDigest": "sha256:525160c80145fb6a339d2ccd43b2390387d727ee0853fb15218e96e0d5767319"
     }
   ],
   "verification": []

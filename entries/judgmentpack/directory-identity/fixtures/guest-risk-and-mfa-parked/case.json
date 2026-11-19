@@ -1,4 +1,13 @@
 {
+  "kind": {
+    "value": "guest"
+  },
+  "deleted": {
+    "value": false
+  },
+  "licenceTier": {
+    "value": "free"
+  },
   "user": {
     "evidence": "present",
     "value": {
@@ -9,15 +18,7 @@
       "accountEnabled": true,
       "createdDateTime": "2025-09-18T15:47:09Z",
       "deletedDateTime": null,
-      "onPremisesSyncEnabled": null,
-      "signInActivity": {
-        "lastSignInDateTime": "2026-01-12T11:02:37Z",
-        "lastSignInRequestId": "8a6c97b6-8779-47ae-bef8-0b3a1ffb66e2",
-        "lastNonInteractiveSignInDateTime": null,
-        "lastNonInteractiveSignInRequestId": null,
-        "lastSuccessfulSignInDateTime": "2026-01-12T11:02:37Z",
-        "lastSuccessfulSignInRequestId": "8a6c97b6-8779-47ae-bef8-0b3a1ffb66e2"
-      }
+      "onPremisesSyncEnabled": null
     }
   },
   "transitiveMemberOf": {
@@ -66,6 +67,10 @@
       }
     ]
   },
+  "groupEligibility": {
+    "evidence": "present",
+    "value": []
+  },
   "oauth2PermissionGrants": {
     "evidence": "present",
     "value": [
@@ -84,6 +89,9 @@
     "value": []
   },
   "servicePrincipal": {
+    "evidence": "absent"
+  },
+  "signInActivity": {
     "evidence": "absent"
   },
   "signIns": {
@@ -152,18 +160,55 @@
     "value": []
   },
   "streams": {
-    "user": {"state": "read"},
-    "transitiveMemberOf": {"state": "read"},
-    "roleAssignments": {"state": "read"},
-    "roleEligibilitySchedules": {"state": "read"},
-    "oauth2PermissionGrants": {"state": "read"},
-    "appRoleAssignments": {"state": "read"},
-    "servicePrincipal": {"state": "absent", "reason": "not-applicable"},
-    "signIns": {"state": "read"},
-    "directoryAudits": {"state": "read"},
-    "riskDetections": {"state": "absent", "reason": "licence"},
-    "riskyUser": {"state": "absent", "reason": "licence"},
-    "registrationDetails": {"state": "absent", "reason": "licence"},
-    "registeredDevices": {"state": "read"}
+    "user": {
+      "state": "read"
+    },
+    "transitiveMemberOf": {
+      "state": "read"
+    },
+    "roleAssignments": {
+      "state": "read"
+    },
+    "roleEligibilitySchedules": {
+      "state": "read"
+    },
+    "groupEligibility": {
+      "state": "read"
+    },
+    "oauth2PermissionGrants": {
+      "state": "read"
+    },
+    "appRoleAssignments": {
+      "state": "read"
+    },
+    "servicePrincipal": {
+      "state": "absent",
+      "reason": "not-applicable"
+    },
+    "signInActivity": {
+      "state": "absent",
+      "reason": "licence"
+    },
+    "signIns": {
+      "state": "read"
+    },
+    "directoryAudits": {
+      "state": "read"
+    },
+    "riskDetections": {
+      "state": "absent",
+      "reason": "licence"
+    },
+    "riskyUser": {
+      "state": "absent",
+      "reason": "home-directory"
+    },
+    "registrationDetails": {
+      "state": "absent",
+      "reason": "licence"
+    },
+    "registeredDevices": {
+      "state": "read"
+    }
   }
 }
