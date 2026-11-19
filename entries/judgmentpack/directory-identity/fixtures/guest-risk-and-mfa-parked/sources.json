@@ -49,11 +49,11 @@
           "statement": null,
           "upstreamToken": null
         },
-        "argumentsCommitment": "sha256:a9774a7c8e1e79c084bd20cf9f6fb7b1f5de5d7d98413ed6a2849f01c33c4dd6",
+        "argumentsCommitment": "sha256:b81c2bcc1172284b7f9cd3b8b9fe8557b0eadf26a7f50f4e22f394d55dc227f9",
         "authority": "example",
         "callIndex": 0,
         "caller": null,
-        "keyId": "9d74c856ee24f4e1b3a7cb60707c46ca",
+        "keyId": "c45ff98a71ca9e6d6f8ca42f321d2a34",
         "kind": "acquisition",
         "prevSignature": null,
         "receiptVersion": "3",
@@ -61,10 +61,10 @@
         "servedAt": "2026-01-15T11:20:04Z",
         "sessionId": "organization.session",
         "source": "directory/organization",
-        "signature": "dcc8805b3015d567a94a90f99ff63ef4e9bead211593dbd073f8ca0b026adf050623d3dc34e379c28e98004c30320066720e5621f413c100ac6277578bd9ea01"
+        "signature": "8fb1667d04e2e83327da64a46253b2a618d26797a4e61900ef1a614270d971fed36fbe88673eee8bfda068c3ed8b31d02d8db527982e800dbdc044de701f8c05"
       },
       "salts": {
-        "args": "e47231b19adb422ad7d41022f734ccb767dd4c57ab35d63d3559d5fd639593a6"
+        "args": "ffa403ea518fc2a761b9652e743d44b041ce4e19ad845ec5f8a3bbd63f883cd4"
       }
     }
   }

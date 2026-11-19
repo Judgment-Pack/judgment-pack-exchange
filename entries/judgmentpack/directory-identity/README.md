@@ -21,10 +21,11 @@ evidence is present, a `value` member holding the record as Graph returns it. On
 `not-applicable`. Every case target is copied (RFC 0018 §6.2), so every case fact is of class
 `asserted`: the caller asserts it, and no receipt stands behind it.
 
-**The organization source** is one `operation` source, `organization`, a `GET` of `/organization`
-through an `http` gateway source. It is published unbound: platform `microsoft-graph`, operation
-`live`, shape `http`, record `adapter-http`, with a `maxAge` of 3600 seconds. It binds to the gateway
-catalog's microsoft-graph binding, from the gateway release that ships it. Its rule writes
+**The organization source** is one `operation` source, `organization`, a `GET` of
+`/v1.0/organization` through an `http` gateway source (the path is the binding's, version prefix
+included). It is published unbound: platform `microsoft-graph`, operation `live`, shape `http`,
+record `adapter-http`, with a `maxAge` of 3600 seconds. It binds to the gateway catalog's
+microsoft-graph binding, from the gateway release that ships it. Its rule writes
 `/tenant/licence/plans` from the first organization's `assignedPlans`, of class `record`, and the
 evidence `organization-record`; a read that is not a `200` with assigned plans writes no fact and
 reads that evidence as absent, with acquisition status `unknown`.
